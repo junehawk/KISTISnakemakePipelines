@@ -1,0 +1,24 @@
+rule vcf_gz:
+    input: "{prefix}.vcf"
+    output:
+        gziped="{prefix}.vcf.gz",
+        index="{prefix}.vcf.gz.gzi"
+    shell:
+        "{config[tools][bgzip]} -i {input}"
+
+rule vcf_gz_index:
+    input: 
+        "{prefix}.vcf.gz"
+    output:
+        "{prefix}.vcf.gz.tbi"
+    shell:
+        "{config[tools][tabix]} {input}"
+
+#TODO
+rule vcf_contrast:
+    input:
+        "{prefix}.vcf.gz"
+    output:
+        "{prefix}.result.txt"
+    shell:
+        "vcf-annotate -f MinMQ=30 file.vcf | vcf-contrast -n +Child -Mother,Father -d 10 -f | vcf-query -f '%CHROM %POS\t%INFO/NOVELTY\t%INFO/NOVELAL\t%INFO/NOVELGT[\t%SAMPLE %GTR %PL]\n' | sort -k3,3nr > {output}"

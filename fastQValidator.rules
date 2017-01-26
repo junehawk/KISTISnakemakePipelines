@@ -1,0 +1,10 @@
+#Run fastQValidator to validate integrity of fastq file
+rule fastQValidator:
+    input:
+        "fastq/{prefix}.fastq.gz"
+    output:
+        "qc/{prefix}.fastqvalidator.txt"
+    threads: 4
+    priority: 5
+    shell:
+        "{config[tools][fastQValidator]} --maxErrors 1 --noeof --file {input} | tee {output}"

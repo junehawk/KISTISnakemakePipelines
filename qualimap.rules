@@ -1,0 +1,22 @@
+#Run qualimap for validating quality of bam files
+
+#get path to reference genome file with name of 'ref'
+def _get_gff_option(wildcards):
+    if(wildcards.method == "wes"):
+        return "-gff " + config["exome_bed"]
+    else:
+        return ""
+
+rule qualimap_bam:
+    input:
+        bam="mapping/{ref}/{alg}/{project}-{disease}-{sample}-{part}-{method}-{platform}.{post_proc}.bam"
+    output:
+        "qc/{ref}/{alg}/qualimap/{project}-{disease}-{sample}-{part}-{method}-{platform}.{post_proc}/qualimapReport.html"
+    threads: 8
+    params:
+        path="qc/{ref}/{alg}/qualimap/{project}-{disease}-{sample}-{part}-{method}-{platform}.{post_proc}",
+        gff_option=_get_gff_option
+    shell:
+        "{config[tools][qualimap]} bamqc -bam {input.bam} -outdir {params.path} -nt {threads} "
+        "{params.gff_option} "
+        "--java-mem-size=16G "

@@ -1,0 +1,52 @@
+#get all bam files preprocessed as described at the file name
+#all sample name should be stored in variable 'SAMPLE' as list
+def _get_bams(wildcards):
+    SAMPLE, = glob_wildcards("fastq/{sample,[^.]+}_1.fastq.gz")
+    return expand("mapping/{ref}/{alg}/{sample}.{processed}.bam", ref=wildcards.ref, alg=wildcards.alg, processed=wildcards.processed, sample=SAMPLE)
+
+#make comma seperated list of bam files
+def _get_platypus_bamlist(wildcards):
+    SAMPLE, = glob_wildcards("fastq/{sample,[^.]+}_1.fastq.gz")
+    return ",".join(expand("mapping/{ref}/{alg}/{sample}.{processed}.bam", ref=wildcards.ref, alg=wildcards.alg, processed=wildcards.processed, sample=SAMPLE))
+
+#run platypus on all samples in 'SAMPLE'
+#WARNING: for now this rule supports default parameters only
+rule run_platypus:
+    input:
+        reference=_get_ref,
+        bams=_get_bams
+    output:
+        "variant_calling/{ref}/{alg}/platypus/all.{processed}.vcf"
+    threads: 8
+    log:
+        "log/variant_calling/{ref}/{alg}/platypus.{processed}.log"
+    params:
+        bamlist=_get_platypus_bamlist
+    shell:
+        "python {config[tools][platypus]} callVariants "
+        "--nCPU={threads} --assemble=1 --logFileName={log}"
+        "--bamFiles={params.bamlist} --output={output} --refFile={input.reference}"
+        "--hapScoreThreshold 10 --scThreshold 0.99 --filteredReadsFrac 0.9 --rmsmqThreshold 20 "
+        "--qdThreshold 0 --abThreshold 0.0001 --minVarFreq 0.0"
+
+#post-processing platypus vcf files
+rule platypus_post:
+    input:
+        reference=_get_ref,
+        vcf="variant_calling/{ref}/{alg}/platypus/all.{processed}.vcf"
+    output:
+        "variant_calling/{ref}/{alg}/platypus}/all.{processed}.processed.vcf"
+    shell:
+        "awk -F$'\t' -v OFS='\t' '{{if ($0 !~ /^#/) gsub(/[KMRYSWBVHDX]/, \"N\", $4) }} {{print}}' {input.vcf} | "
+        "vcfallelicprimitives --keep-geno | vcffixup | vcfstreamsort | "
+        "{config[tools][vt]} normalize -r {input.reference} -q - 2> /dev/null "
+        " > {output} "
+
+#filter variants with predefined criteria
+rule platypus_filter:
+    input:
+        "variant_calling/{ref}/{alg}/platypus/all.{processed}.vcf"
+    output:
+        "variant_calling/{ref}/{alg}/platypus/all.{processed}.filtered.vcf"
+    shell:
+        "vcffilter -f '( ( FR = 0.5 | FR < 0.5 ) &  TC < 4  & QUAL < 20  ) | ( TC < 13 & QUAL <10 ) | ( FR > 0.5 &  TC < 4 & QUAL < 50 )' -s -v {input} > {output}"

@@ -1,0 +1,88 @@
+#get path to reference genome file with name of 'ref'
+def _get_snpeff(wildcards):
+    return config["snpeff_db"][wildcards.ref]
+
+#Filter selects variants in vcf files tagged as 'PASS'
+rule vcf_filter:
+    input: "{prefix}.vcf"
+    output: "{prefix}.passed.vcf"
+    threads: 8
+    shell: "java -jar {config[tools][snpsift]} filter -f {input} "
+           "\"( FILTER = 'PASS' )\" > {output}"
+
+#Annotate vcfs with dbsnp ids by using dbsnp database
+rule vcf_dbSnp_matching:
+    input:  "{prefix}.vcf"
+    output: "{prefix}.dbsnp.vcf"
+    threads: 8
+    shell: "java -Xmx16g -jar {config[tools][snpsift]} annotate "
+           "-id {config[db][dbsnp]} "
+           "{input} > {output}"
+
+#Filter out known dbsnp variants and stores novel variants to *.not_in_dbsnp.vcf
+rule vcf_filter_dbSnp:
+    input: "{prefix}.dbsnp.vcf"
+    output: "{prefix}.not_in_dbsnp.vcf"
+    threads: 8
+    shell: "java -Xmx16g -jar {config[tools][snpsift]} filter -f {input} \"! exists ID\" > {output}"
+
+#Annotate variants with snpeff
+#WARNING: only works with GRCH37 for now
+#rule vcf_gene_annotation_snpeff:
+#    input: "{prefix}.vcf"
+#    output: "{prefix}.annotated.vcf"
+#    threads: 8
+#    shell: "java -Xmx16g -jar {config[tools][snpeff]} eff -v GRCh37.75 {input} > {output}"
+
+#Annotate variants with snpeff
+#WARNING: only works with GRCH37 for now
+rule vcf_gene_annotation_snpeff:
+    input: "variant_calling/{ref}/{prefix}.vcf"
+    output: "variant_calling/{ref,[^/]+}/{prefix}.snpeff.vcf"
+    threads: 8
+    params: db=_get_snpeff
+    shell: "java -Xmx16g -jar {config[tools][snpeff]} eff -v {params.db} {input} > {output}"
+
+rule vcf_gene_annotation_vep:
+    input: "variant_calling/{ref}/{prefix}.vcf"
+    output: "variant_calling/{ref,[^/]+}/{prefix}.vep.vcf"
+    threads: 4
+    shell:
+        "source /cluster/ngs/utils/perlbrew/etc/bashrc && "
+        "perlbrew use perl-5.24.0 && "
+        "export PERL5LIB=\"\" && "
+        "perl /cluster/ngs/ensembl-tools-release-85/scripts/variant_effect_predictor/variant_effect_predictor.pl "
+        "--cache --dir_cache /cluster/ngs/ensembl-tools-release-85/scripts/variant_effect_predictor/cache --vcf "
+        "--fork {threads} -no_stats -i {input} -o {output} --no_progress --everything --offline --buffer_size 3000"
+
+rule vcf_extract_missense_vep:
+    input: "{prefix}.vep.vcf"
+    output: "{prefix}.vep.missense.vcf"
+    threads: 4
+    shell:
+        "source /cluster/ngs/utils/perlbrew/etc/bashrc && perlbrew use perl-5.24.0 && export PERL5LIB=\"\" && "
+        "perl /cluster/ngs/ensembl-tools-release-85/scripts/variant_effect_predictor/filter_vep.pl "
+        "--format vcf -i {input} -o {output} -f \"Consequence is missense_variant\" --force_overwrite"
+
+#Select missense variants in the input vcf file and stores data to *.missense.vcf
+#Vcf data must be annotated with snpeff
+rule vcf_extract_missense:
+    input: "{prefix}.func.vcf"
+    output: "{prefix}.func.missense.vcf"
+    threads: 8
+    shell: "java -Xmx16g -jar {config[tools][snpsift]} filter -f {input} \"ANN[*].EFFECT has 'missense_variant'\"  > {output}"
+
+#Annotate vcf with functional information from dbnsfp
+rule vcf_functional_annotation:
+    input: "{prefix}.vcf"
+    output: "{prefix}.func.vcf"
+    threads: 8
+    shell: "java -Xmx16g -jar {config[tools][snpsift]} dbnsfp -v -db {config[db][dbnsfp]} "
+           "{input} > {output}"
+
+#remove variants resides in the low complexity regions
+rule vcf_remove_lcr:
+    input: "{prefix}.vcf"
+    output: "{prefix}.lcr_removed.vcf"
+    threads: 8
+    shell: "{config[tools][bedtools]} subtract -header -a {input} -b /lustre/share/bcbio-nextgen/genomes/Hsapiens/GRCh37/variation/LCR.bed.gz > {output}"

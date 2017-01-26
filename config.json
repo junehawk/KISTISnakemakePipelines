@@ -1,0 +1,98 @@
+{
+    "references": {
+        "gatk_b37": "/data/reference/gatk_b37/human_g1k_v37.fasta",
+        "hs37d5": "/lustre/db/reference/hs37d5/hs37d5.fa",
+        "GRCh37-lite": "/lustre/db/GRCh37-lite/GRCh37-lite.fa",
+        "gatk_b38": "/blues/ngs/db/reference/gatk_b38/Homo_sapiens_assembly38.fasta"
+    },
+    "ref_paths": {
+        "gatk_b37": "/data/reference/gatk_b37",
+        "hs37d5": "/lustre/db/reference/hs37d5",
+        "GRCh37-lite": "/lustre/db/GRCh37-lite",
+        "gatk_b38": "/blues/ngs/db/reference/gatk_b38"
+    },
+    "exome_bed": "/blues/ngs/db/reference/gatk_b38/SureSelect_v5+UTR.bed",
+    "platform": "Illumina",
+    "ploidy": 2,
+    "heterozygosity": 0.001,
+    "indel_heterozygosity": 1.25E-4,
+    "tools": {
+        "mutect": "/cluster/ngs/mutect/mutect-1.1.7.jar",
+        "gatk": "/cluster/ngs/gatk3.4-0/GenomeAnalysisTK.jar",
+        "picard": "/cluster/ngs/picard-tools-1.135/picard.jar",
+        "snpeff": "/cluster/ngs/snpEff/snpEff.jar",
+        "snpsift": "/cluster/ngs/snpEff/SnpSift.jar",
+        "strelka": "/cluster/ngs/strelka-1.0.14/",
+        "samblaster": "/cluster/ngs/samblaster-0.1.22/samblaster",
+        "sambamba": "/cluster/ngs/sambamba/sambamba",
+        "bwa": "/cluster/ngs/bwa-0.7.12/bwa",
+        "bwa062": "/cluster/ngs/bwa-0.6.2/bwa",
+        "freebayes": "/cluster/ngs/freebayes/bin/freebayes",
+        "freec": "/cluster/ngs/FREEC-7.2",
+        "meerkat": "/cluster/ngs/Meerkat0.185/scripts",
+        "platypus": "/cluster/ngs/Platypus_0.8.1/Platypus.py",
+        "samtools": "/cluster/ngs/samtools-1.2/samtools",
+        "vt": "/cluster/ngs/vt-0.577/vt",
+        "vcftools": "/cluster/ngs/vcftools_0.1.12b/bin",
+        "blast": "/cluster/ngs/blast-2.2.26/bin",
+        "tea": "/cluster/ngs/TEA",
+        "fastqc": "/cluster/ngs/fastqc-0.11.3/fastqc",
+        "bedtools": "/cluster/ngs/bedtools2/bin/bedtools",
+        "fastQValidator": "/cluster/ngs/fastQValidator_0.1.1a/fastQValidator/bin/fastQValidator",
+        "cnvkit": "/cluster/ngs/utils/miniconda/bin/cnvkit.py",
+        "manta": "/cluster/ngs/manta-0.29.6",
+        "delly": "/cluster/ngs/delly/src/delly_v0.7.5_parallel_linux_x86_64bit",
+        "bgzip": "/cluster/ngs/utils/htslib-1.3/bgzip",
+        "canvas": "/cluster/ngs/utils/mono/bin/mono /cluster/ngs/Canvas_1.11.0/Canvas.exe",
+        "bicseq2": "/cluster/ngs/BICseq2",
+        "cnvnator": "/cluster/ngs/CNVnator_v0.3.2/cnvnator",
+        "bcftools": "/cluster/ngs/bcftools-1.3/bcftools",
+        "tabix": "/cluster/ngs/utils/htslib-1.3/tabix",
+        "vecuum": "/cluster/ngs/Vecuum/Vecuum.jar",
+        "qualimap": "/cluster/ngs/qualimap_v2.2.1/qualimap"
+    },
+    "snpeff_db": {
+        "gatk_b38": "GRCh38.79",
+        "gatk_b37": "GRCh37.75"
+    },
+    "params_bwa_mem": "-M",
+    "params_cnvnator_bin_size": "100",
+    "platform": "ILLUMINA",
+    "params_gatk": "--filter_bases_not_stored",
+    "params_gatk_recal": "",
+    "params_gatk_var_recal": "",
+    "params_meerkat_pre": "-k 10000 -q 5",
+    "params_meerkat": "-d 5 -a 0 -u 1 -Q 10 -p 2 -o 1",
+    "params_freebayes": "--min-base-quality 3 --min-mapping-quality 1",
+    "params_varscan": "--min-coverage 5 --p-value 0.98",
+    "tmp_path": "/blues/tmp",
+    "bwa_path": "/cluster/ngs/bwa-0.6.2",
+    "samtools_path": "/cluster/ngs/samtools-0.1.19",
+    "freebayes_vcflib": "/cluster/ngs/freebayes/vcflib/bin",
+    "params_bicseq2": {
+        "readlength": "150",
+        "fragmentsize": "350",
+        "binsize": "100",
+        "lam": "4"
+    },
+    "db": {
+        "dbsnp": "/data/db/dbSNP_142_TNLab.vcf",
+        "cosmic": "/data/db/Cosmic.GRCh37.v68.vcf",
+        "g1k": "/data/db/1000G_phase1.indels.b37.vcf",
+        "dbnsfp": "/cluster/ngs/snpEff/db/dbNSFP2.7.txt.gz",
+        "delly_excl": "/cluster/ngs/delly/excludeTemplates/human.hg19.excl.tsv",
+        "popfile": "/blues/ngs/db/reference/gatk_b38/GRCh38_population_stratified_af_hapmap_3.3.vcf",
+        "sequenza_gc": {
+            "GRCh37-lite": "/cluster/ngs/sequenza/GRCh37-lite.gc50Base.txt.gz",
+            "gatk_b37": "/cluster/ngs/sequenza/human_g1k_v37.gc50Base.txt.gz"
+        }
+    },
+    "known_variants": {
+        "dbsnp": "/data/db/dbSNP_142_TNLab.vcf",
+        "cosmic": "/data/db/Cosmic.GRCh37.v68.vcf",
+        "g1k": "/data/db/1000G_phase1.indels.b37.vcf",
+        "hapmap": "/data/db/hapmap_3.3.b37.vcf",
+        "omni": "/data/db/1000G_omni2.5.b37.vcf",
+        "mills": "/data/db/Mills_and_1000G_gold_standard.indels.b37.vcf"
+    }
+}

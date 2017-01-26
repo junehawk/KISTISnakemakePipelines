@@ -1,0 +1,16 @@
+rule triodenovo:
+    input:
+        ped="peds/{family}.ped",
+        vcf="gatk-hc.fmarked_merged.recalibrated_final.norm.vcf.gz"
+    output:
+        "{family}_denovo.vcf"
+    params:
+        "--minDepth 10 --minDQ 7"
+    shell:
+        "{config[tools][triodenovo]} --ped {input.ped} {params} --in_vcf {input.vcf} --out_vcf {output}"
+
+rule triodenovo_filter:
+    input: "{family}_denovo.vcf"
+    output: "{family}_denovo.filtered.vcf"
+    shell:
+        "egrep \"DQ|#\" {input} | perl -lane 'print if /#/; next if length($F[3])>1 || length($F[4])>1 || $F[4]=~/,/; next if $F[5]<30; $F[9] =~ /([A-Z])\/([A-Z])/; next if $1 ne $2; next if $F[10] !~ /$1\/$1/; $F[11]=~/([A-Z])\/([A-Z])/; next if $1 eq $2; $F[11] =~ /(\d+),(\d+),(\d+)/; next if $2 != 0 || $1<30 || $3<30; print' > {output}"

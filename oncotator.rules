@@ -1,0 +1,5 @@
+#Filter selects variants in vcf files tagged as 'PASS'
+rule oncotator:
+    input: "{prefix}.passed.vcf"
+    output: "{prefix}.passed.oncotator.maf"
+    shell: "source /cluster/ngs/utils/miniconda/bin/activate root && oncotator -v --db-dir /cluster/ngs/oncotator-1.8.0.0/oncotator_v1_ds_Jan262014 --input_format=VCF --output_format=TCGAMAF {input} {output} hg19"

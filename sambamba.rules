@@ -1,0 +1,8 @@
+rule sambamba_flagstat:
+    input: 
+        bam="mapping/{ref}/{alg}/{prefix}.bam"
+#        bai="mapping/{ref}/{alg}/{prefix}.bam.bai"
+    output: "qc/{ref}/{alg}/sambamba/{prefix}.bam.flagstat.txt"
+    threads: 8
+    shell:
+        "{config[tools][sambamba]} flagstat -t {threads} {input.bam} > {output}"

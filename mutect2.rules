@@ -1,0 +1,22 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+#run mutect2 to identify somatic mutations
+rule mutect2:
+    input:
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.bai",
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam.bai",
+        reference=_get_ref,
+        case="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
+        control="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam"
+    output:
+        vcf="variant_calling/{ref}/{alg}/mutect2/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}.vcf"
+    threads: 8
+    shell: 
+        "/cluster/ngs/jdk1.8.0_60/bin/java -jar {config[tools][gatk]} -T MuTect2 "
+        "-nct {threads} "
+        "--cosmic {config[known_variants][cosmic]} --dbsnp {config[known_variants][dbsnp]} "
+        "--reference_sequence {input.reference} "
+        "-I:normal {input.control} -I:tumor {input.case} "
+        "-o {output.vcf}"

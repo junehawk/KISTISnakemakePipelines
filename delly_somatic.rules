@@ -1,0 +1,70 @@
+import os,sys
+
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+def _get_all_normal(wildcards):
+    return "TCGA-A6-A566-10A-01D-A28G-10_wgs_Illumina.bam TCGA-AA-3516-10A-01D-1953-10_wgs_Illumina.bam TCGA-AD-6964-10A-01D-1924-10_wgs_Illumina.bam"
+
+def _get_sample_tsv(wildcards):
+    return "samples.tsv"
+
+
+rule delly_call_single_pair_somatic:
+    input:
+        reference=_get_ref,
+        tum="mapping/{ref}/{alg}/{project}-{disease}-{id}-{tumor}-{method}-{platform}.{processed}.bam",
+        con="mapping/{ref}/{alg}/{project}-{disease}-{id}-{control}-{method}-{platform}.{processed}.bam"
+    output:
+        bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_first.bcf",
+        csi="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_first.bcf.csi"
+    threads: 4
+    shell:
+        "{config[tools][delly]} call -t {wildcards.sv_type} -g {input.reference} -o {output.bcf} -x {config[db][delly_excl]} {input.tum} {input.con}"
+
+rule delly_pre_filter_somatic:
+    input:
+        bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_first.bcf",
+        reference=_get_ref,
+        sampletsv=_get_sample_tsv
+    output:
+        bcf=temp("sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_pre.bcf"),
+        csi=temp("sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_pre.bcf.csi")
+    threads: 4
+    shell:
+        "{config[tools][delly]} filter -t {wildcards.sv_type} -f somatic "
+        "-o {output.bcf} -s {input.sampletsv} -g {input.reference} {input.bcf}"
+
+
+rule delly_regenotype_somatic:
+    input:
+        reference=_get_ref,
+        tum="mapping/{ref}/{alg}/{project}-{disease}-{id}-{tumor}-{method}-{platform}.{processed}.bam",
+        bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_pre.bcf"
+    output:
+        bcf=temp("sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}.somatic.bcf")
+    params:
+        allnormal=_get_all_normal
+    threads: 4
+    shell:
+        "{config[tools][delly]} call -t  {wildcards.sv_type} -g {input.reference} -v {input.bcf} "
+        "-o {output.bcf} -x {config[db][delly_excl]} {input.tum} {params.allnormal}"
+
+rule delly_somatic_filter:
+    input:
+        reference=_get_ref,
+        bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}.somatic.bcf",
+        csi="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}.somatic.bcf.csi",
+        sampletsv=_get_sample_tsv
+    output:
+        "sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}.somatic.filtered.bcf"
+    threads: 4
+    shell:
+        "{config[tools][delly]} filter -t {wildcards.sv_type} -f somatic -o {output} -s {input.sampletsv} -g {input.reference} {input.bcf}"
+
+
+rule bcf_index:
+    input: "{prefix}.bcf"
+    output: "{prefix}.bcf.csi"
+    shell: "/cluster/ngs/delly/src/bcftools/bcftools index {input}"

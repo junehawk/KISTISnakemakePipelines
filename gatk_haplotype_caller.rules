@@ -1,0 +1,154 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+#make specified 'flag' seperated list of files
+def _gatk_multi_arg(flag, files):
+    flag += " "
+    return " ".join(flag + f for f in files)
+
+#get gvcf files of samples in 'SAMPLE' variable as list
+def _get_gvcfs(wildcards):
+    SAMPLE, = glob_wildcards("fastq/{sample,[^./]+}_1.fastq.gz")
+    return sorted(expand(
+            "variant_calling/{ref}/{alg}/gatk_hc/{sample}.{processed}.g.vcf.gz",
+            sample=SAMPLE,
+            ref=wildcards.ref,
+            alg=wildcards.alg,
+            processed=wildcards.processed))
+
+def _get_combined_files(wildcards):
+    gvcfs=_get_gvcfs(wildcards)
+    a=len(gvcfs)
+    b=60
+    num_combined_files=(a+(-a%b))//b
+    return expand(
+            "variant_calling/{ref}/{alg}/gatk_hc/combined/{index}_{processed}_{chromosome}.g.vcf.gz",
+            ref=wildcards.ref,
+            alg=wildcards.alg,
+            processed=wildcards.processed,
+            chromosome=wildcards.chromosome,
+            index=list(range(num_combined_files)) )
+
+def _get_variants(wildcards):
+    gvcfs=_get_gvcfs(wildcards)
+    a=len(gvcfs)
+    b=60
+    num_combined_files=(a+(-a%b))//b
+    index=int(wildcards.index)
+    return gvcfs[b*index:b*index+b]
+
+def _get_gatk_result_vcfs(wildcards):
+    ref = _get_ref(wildcards)
+    with open(ref + ".test.fai") as f:
+        regions = []
+        for line in f:
+            fields = line.strip().split("\t")
+            chrom_name = fields[0]
+            region = chrom_name
+            regions.append(region)
+    return expand(
+        "variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed}.{region}.vcf.gz",
+        ref=wildcards.ref,
+        alg=wildcards.alg,
+        processed=wildcards.processed,
+        region=regions)
+
+#Run gatk haplotype caller on a bam with default parameters
+rule gatk_haplotype_caller:
+    input:
+        "mapping/{ref}/{alg}/{sample}.{processed}.bam.bai",
+        reference=_get_ref,
+        bam="mapping/{ref}/{alg}/{sample}.{processed}.bam", 
+    output:
+        gvcf="variant_calling/{ref}/{alg}/gatk_hc/{sample}.{processed,[^_]+}.g.vcf.gz",
+        idx="variant_calling/{ref}/{alg}/gatk_hc/{sample}.{processed,[^_]+}.g.vcf.gz.tbi"
+    params:
+        custom=config.get("params_gatk", "")
+    log:
+        "log/variant_calling/{ref}/{alg}/gatk_hc/{sample}.gatk_hc.genotype_info.log"
+    threads: 4 # haplotype caller currently does not reliably use more than 2 threads
+    shell:
+        "java -Xmx16g -jar "
+        "{config[tools][gatk]} "
+        "-T HaplotypeCaller -R {input.reference} -I {input.bam} {params.custom} "
+        "--disable_auto_index_creation_and_locking_when_reading_rods "
+        "--emitRefConfidence GVCF --variant_index_type LINEAR "
+        "--heterozygosity {config[heterozygosity]} "
+        "--indel_heterozygosity {config[indel_heterozygosity]} "
+        "--dbsnp {config[known_variants][dbsnp]} -nct 2 "
+        "--variant_index_parameter 128000 -o {output.gvcf} >& {log}"
+
+rule gatk_combine_by_chr:
+    input:
+        reference=_get_ref,
+        variants=_get_variants
+    output:
+        "variant_calling/{ref}/{alg}/gatk_hc/combined/{index}_{processed,[^_]+}_{chromosome,[^.]+}.g.vcf.gz"
+    threads: 16
+    run:
+        variants=_gatk_multi_arg("--variant", input.variants)
+        shell(
+            "java -Xmx32g -jar {config[tools][gatk]} -T CombineGVCFs "
+            "{variants} "
+            "-L {wildcards.chromosome} -R {input.reference} -o {output} "
+            "--disable_auto_index_creation_and_locking_when_reading_rods")
+
+rule gatk_genotyping_by_chr:
+    input:
+        reference=_get_ref,
+        combinedVariants=_get_combined_files
+    output:
+        "variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed,[^_]+}.{chromosome,[^.]+}.vcf.gz"
+    threads: 16
+    log: "log/variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed}.{chromosome,[^.]+}.genotype.log"
+    priority : 2
+    run:
+        combinedVariants = _gatk_multi_arg("--variant", input.combinedVariants)
+        shell(
+            "java -Xmx50g -jar {config[tools][gatk]} -T GenotypeGVCFs "
+            "-nt 16 --filter_bases_not_stored -R {input.reference} "
+            "--disable_auto_index_creation_and_locking_when_reading_rods "
+            "--dbsnp {config[known_variants][dbsnp]} "
+            "{combinedVariants} "
+            "-L {wildcards.chromosome} -o {output}")
+
+#Genotyping by merging all available gvcfs from haplotype caller algorithm
+rule gatk_genotyping:
+    input:
+        reference=_get_ref,
+        gvcfs=_get_gvcfs
+    output:
+        "variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed,[^_]+}.vcf"
+    params:
+        custom=config.get("params_gatk", "")
+    log:
+        "log/variant_calling/{ref}/{alg}/gatk_hc/gatk.genotype.log"
+    threads: 16
+    run:
+        gvcfs = _gatk_multi_arg("--variant", input.gvcfs)
+        shell(
+            "java -Xmx16g -jar "
+            "{config[tools][gatk]} "
+            "-T GenotypeGVCFs {gvcfs} -nt {threads} {params.custom} "
+            "-R {input.reference} --disable_auto_index_creation_and_locking_when_reading_rods "
+            "--dbsnp {config[known_variants][dbsnp]} -o {output} >& {log}")
+
+rule gatk_merge_vcfs:
+    input:
+        vcfs=_get_gatk_result_vcfs
+    output:
+        "variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed,[^_]+}_merged.vcf.gz"
+    shell:
+        "/cluster/ngs/delly/src/bcftools/bcftools concat -o {output} -O z -a {input}"
+
+#Filter GATK haplotype caller derived variants with hard filter
+rule gatk_vcf_filter:
+    input:
+        snp="variant_calling/{ref}/{alg}/gatk_hc/{prefix}.vcf.gz",
+        reference=_get_ref
+    output:
+        "variant_calling/{ref}/{alg}/gatk_hc/{prefix}.hardfiltered.vcf.gz"
+    shell:
+        #"java -jar /cluster/ngs/snpEff/SnpSift.jar filter -n 'QD < 2.0 | MQ < 40.0 | FS > 60.0 | MQRankSum < -12.5 | ReadPosRankSum < -8.0' {input} > {output}"
+        "java -jar {config[tools][gatk]} -T VariantFiltration -R {input.reference} -V {input.snp} --filterExpression \"QD < 2.0 || FS > 60.0 || MQ < 40.0 || MQRankSum < -12.5 || ReadPosRankSum < -8.0\" --filterName \"GATKHardfilter\" -o {output}"

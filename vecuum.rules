@@ -1,0 +1,27 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+def _get_assembly_version(wildcards):
+    if "hg38" in wildcards.ref or "GRCh37" in wildcards.ref or "b38" in wildcards.ref:
+        return "-a hg38"
+    elif "hg19" in wildcards.ref or "GRCh37" in wildcards.ref or "b37" in wildcards.ref:
+        return "-a hg19"
+    else:
+        return ""
+rule Vecuum:
+    input:
+        bam="mapping/{ref}/{alg}/{prefix}.bam",
+        reference=_get_ref,
+        bai="mapping/{ref}/{alg}/{prefix}.bam.bai"
+    output:
+        fcall="qc/{ref}/{alg}/vecuum/{prefix,[^/]+}/{prefix}.bam.false.variants.call",
+        summary="qc/{ref}/{alg}/vecuum/{prefix,[^/]+}/{prefix}.bam.false.variants.call.summary.txt"
+    threads: 8
+    params:
+        out_path="qc/{ref}/{alg}/vecuum/{prefix}",
+        ref_build=_get_assembly_version
+    shell:
+        "java -jar {config[tools][vecuum]} -n {threads} -r {input.reference} -b {input.bam} -S {config[tools][samtools]} "
+        "-B {config[tools][bwa]} -o {params.out_path} -A -k {params.ref_build} && "
+        "/cluster/ngs/Vecuum/summary.sh {output.fcall}"

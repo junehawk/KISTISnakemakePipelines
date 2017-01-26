@@ -1,0 +1,28 @@
+def _get_ref_index(wildcards):
+    return config["ref_index"][wildcards.ref]
+
+rule kallisto_fastq:
+    input:
+        forward="fastq/{prefix}_1.fastq",
+        backward="fastq/{prefix}_2.fastq",
+        ref_index=_get_ref_index
+    output:
+        abundance="rnaseq/{ref}/kallisto/{prefix}/abundance.tsv"
+    threads: 8
+    params:
+        outdir="rnaseq/{ref}/kallisto/{prefix}"
+    shell:
+        "{config[tools][kallisto]} quant -i {input.ref_index} -o {params.outdir} {config[params_kallisto]} -t {threads} {input.forward} {input.backward}"
+
+rule kallisto_fastq_gz:
+    input:
+        forward="fastq/{prefix}_1.fastq.gz",
+        backward="fastq/{prefix}_2.fastq.gz",
+        ref_index=_get_ref_index
+    output:
+        abundance="rnaseq/{ref}/kallisto/{prefix}/abundance.tsv"
+    threads: 8
+    params:
+        outdir="rnaseq/{ref}/kallisto/{prefix}"
+    shell:
+        "{config[tools][kallisto]} quant -i {input.ref_index} -o {params.outdir} {config[params_kallisto]} -t {threads} {input.forward} {input.backward}"

@@ -1,0 +1,66 @@
+# WARNING: Only works with samples aligned with gatk_b37 reference genome
+# TODO: modify to compatible with other reference genome
+
+from snakemake.utils import R
+
+#Make configuration file to run freec
+rule freec_make_config:
+    input:
+        case="mapping/gatk_b37/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
+        case_bai="mapping/gatk_b37/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.bai",
+        control="mapping/gatk_b37/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam",
+        control_bai="mapping/gatk_b37/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam.bai"
+    output:
+        "cnv_calling/gatk_b37/{alg}/FREEC/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}/freec.conf"
+    params:
+        outdir="cnv_calling/gatk_b37/{alg}/FREEC/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}"
+    shell:
+        """
+        mkdir -p {params.outdir} && echo \"[general]
+chrLenFile = /lustre/db/gatk_b37/human_g1k_v37.len
+coefficientOfVariation = 0.062
+ploidy = {config[ploidy]}
+contaminationAdjustment = TRUE
+gemMappabilityFile = /lustre/db/gatk_b37/human_g1k_v37_100bp.mappability
+maxThreads = 8
+noisyData = TRUE
+outputDir = {params.outdir}
+samtools = {config[tools][samtools]}
+chrFiles = /lustre/db/gatk_b37/byChr
+readCountThreshold = 50
+window = 500
+stop = 250
+printNA = FALSE\n
+[sample]
+mateFile = {input.case}
+inputFormat = bam
+mateOrientation = FR\n
+[control]
+mateFile = {input.control}
+inputFormat = bam
+mateOrientation = FR\n
+[target]
+captureRegions = /cluster/ngs/db/SureSelect_v4+UTR_GRCh37.bed\n\" > {output}
+        """
+#Run freec for somatic copy-number variation calling in case-control setting
+rule freec_run:
+    input:
+        config_file="{path}/freec.conf"
+    output:
+        cnv="{path}/{prefix,[^/]+}_CNVs",
+        ratio="{path}/{prefix,[^/]+}_ratio.txt"
+    threads: 8
+    shell:
+        "{config[tools][freec]}/freec -conf {input.config_file}"
+
+#Assess significance of CNVs and draw CNV plot for freec outputs
+rule freec_post_process:
+    input:
+        cnv="{prefix}_CNVs",
+        ratio="{prefix}_ratio.txt"
+    output:
+        graph="{prefix}_ratio.txt.png",
+        significance="{prefix}_CNVs.p.value.txt"
+    shell:
+        "cat {config[tools][freec]}/scripts/assess_significance.R | R --slave --args {input.cnv} {input.ratio} && "
+        "cat {config[tools][freec]}/scripts/makeGraph.R | R --slave args {config[ploidy]} {input.ratio}"

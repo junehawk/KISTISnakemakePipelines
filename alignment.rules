@@ -1,0 +1,109 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+def _get_bwa_threads(wildcards):
+    return int(config["params_bwa_threads"])
+
+#Align reads with bwa mem algorithm
+rule bwa_mem_map:
+    input:
+        fastqs=expand("fastq/{{prefix}}_{reads}.fastq.gz", reads=["1", "2"]),
+        reference=_get_ref
+    output:
+        temp("mapping/{ref}/mem/{prefix,[^/]+}.sam")
+    params:
+        custom=config.get("params_bwa_mem", ""),
+        id="{prefix}"
+    log:
+        "log/mapping/{ref}/mem/{prefix}_bwa_mem_map.log"
+    threads: 8
+    shell:
+        "{config[tools][bwa]} mem {params.custom} "
+        r"-R '@RG\tID:{params.id}\t"
+        r"LB:{params.id}\tSM:{params.id}\tPL:{config[platform]}' "
+        "-t {threads} {input.reference} {input.fastqs} > {output} 2> {log} "
+
+#Ailgn reads with bwa aln algorithm
+rule bwa_aln:
+    input:
+        fastq="fastq/{sample}_{reads}.fastq.gz",
+        reference=_get_ref
+    output:
+        temp("mapping/{ref}/aln/{sample}_{reads}.sai")
+    log:
+        "log/mapping/{ref}/aln/{sample}_{reads}_bwa_aln.log"
+    threads: 8
+    shell:
+        "{config[tools][bwa]} aln "
+        "-t {threads} {input.reference} {input.fastq} > {output} 2> {log}"
+
+#Merge bwa aln aligned reads of paired end sequencing using bwa sampe algorithm
+rule bwa_sampe_map:
+    input:
+        fastqs=expand("fastq/{{prefix}}_{reads}.fastq.gz", reads=["1", "2"]),
+        sais=expand("mapping/{{ref}}/aln/{{prefix}}_{reads}.sai", reads=["1", "2"]),
+        reference=_get_ref
+    output:
+        temp("mapping/{ref}/aln/{prefix,[^/]+}.sam")
+    params:
+        custom=config.get("params_bwa_aln", ""),
+        id="{prefix}"
+    log:
+        "log/mapping/{ref}/mem/{prefix}_bwa_sampe_map.log"
+    threads: 8
+    shell:
+        "{config[tools][bwa]} sampe {params.custom} "
+        r"-r '@RG\tID:{params.id}\t"
+        r"LB:{params.id}\tSM:{params.id}\tPL:{config[platform]}' "
+        "{input.reference} {input.sais} {input.fastqs} > {output} 2> {log}"
+
+#Run alignment by bwa mem, pcr duplication marking by samblaster and sam to bam converting by sambamba by piping
+rule fast_bwa_mem_dedup:
+    input:
+        fastqs=expand("fastq/{{prefix}}_{reads}.fastq.gz", reads=["1", "2"]),
+        reference=_get_ref
+    output:
+        bam="mapping/{ref}/mem/{prefix,[^/]+}.fmarked.bam"
+        #bai="mapping/{ref}/mem/{prefix,[^/]+}.fmarked.bai"
+    params:
+        custom=config.get("params_bwa_mem", ""),
+        id="{prefix}"
+    log:
+        "log/mapping/{ref}/mem/{prefix}_fast_bwa_mem_dedup.log"
+    threads: _get_bwa_threads
+    shell:
+        "{config[tools][bwa]} mem {params.custom} "
+        r"-R '@RG\tID:{params.id}\t"
+        r"LB:{params.id}\tSM:{params.id}\tPL:{config[platform]}' "
+        "-t {threads} {input.reference} {input.fastqs} | "
+        "{config[tools][samblaster]} --addMateTags -M | "
+        "{config[tools][samtools]} sort -@ {threads} -o {output.bam} -T mapping/{wildcards.ref}/mem/{params.id}"
+        #"{config[tools][sambamba]} view -S -t {threads} --format=bam /dev/stdin | "
+        #"{config[tools][sambamba]} sort -t {threads} --tmpdir={config[tmp_path]} -o {output.bam} /dev/stdin 2> {log}"
+
+#Run alignment by bwa aln, pcr duplication marking by samblaster and sam to bam converting by sambamba by piping
+#TODO: Should implement when single ended sequence data is input
+rule fast_bwa_aln_dedup:
+    input:
+        fastqs=expand("fastq/{{prefix}}_{reads}.fastq.gz", reads=["1", "2"]),
+        sais=expand("mapping/{{ref}}/aln/{{prefix}}_{reads}.sai", reads=["1", "2"]),
+        reference=_get_ref
+    output:
+        bam="mapping/{ref}/aln/{prefix,[^/]+}.fmarked.bam"
+        #bai="mapping/{ref}/aln/{prefix,[^/]+}.fmarked.bai"
+    params:
+        custom=config.get("params_bwa_aln", ""),
+        id="{prefix}"
+    log:
+        "log/mapping/{ref}/aln/{prefix}_fast_bwa_aln_dedup.log"
+    threads: 8
+    shell:
+        "{config[tools][bwa]} sampe {params.custom} "
+        r"-r '@RG\tID:{params.id}\t"
+        r"LB:{params.id}\tSM:{params.id}\tPL:{config[platform]}' "
+        "{input.reference} {input.sais} {input.fastqs} | "
+        "{config[tools][samblaster]} --addMateTags -M | "
+        "{config[tools][samtools]} sort -@ {threads} -o {output.bam} -T mapping/{wildcards.ref}/mem/{params.id}"
+        #"{config[tools][sambamba]} view -S -t {threads} --format=bam /dev/stdin | "
+        #"{config[tools][sambamba]} sort -t {threads} --tmpdir={config[tmp_path]} -o {output.bam} /dev/stdin 2> {log}"

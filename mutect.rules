@@ -1,0 +1,24 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+#run mutect to identify somatic mutations
+rule mutect:
+    input:
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.bai",
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam.bai",
+        reference=_get_ref,
+        case="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
+        control="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam"
+    output:
+        vcf="variant_calling/{ref}/{alg}/mutect/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}.vcf",
+        coverage=temp("variant_calling/{ref}/{alg}/mutect/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}.cov"),
+        idx="variant_calling/{ref}/{alg}/mutect/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}.vcf.idx"
+    threads: 8
+    shell: "java -jar {config[tools][mutect]} --analysis_type MuTect "
+               "--cosmic {config[known_variants][cosmic]} --dbsnp {config[known_variants][dbsnp]} "
+               "--reference_sequence {input.reference} "
+               "--input_file:normal {input.control} --input_file:tumor {input.case} "
+               "--fraction_contamination 0 "
+               "--disable_auto_index_creation_and_locking_when_reading_rods "
+               "--vcf {output.vcf} --coverage_file {output.coverage}"

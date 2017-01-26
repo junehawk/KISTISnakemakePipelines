@@ -1,0 +1,45 @@
+import os,sys
+
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+#get path to dict file of reference genome
+def _get_dict(wildcards):
+    return _get_ref(wildcards).replace(".fasta",".dict").replace(".fa",".dict")
+
+#Merge snv vcf and indel vcf into one vcf file
+rule strelka_result_merge:
+    input:
+        snp="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}/results/passed.somatic.snvs.vcf",
+        indel="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}/results/passed.somatic.indels.vcf",
+        dict=_get_dict
+    output:
+        all="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}.passed.vcf"
+    params:
+        dict=_get_dict
+    shell:
+        "java -jar {config[tools][picard]} MergeVcfs I={input.snp} I={input.indel} "
+        "O={output.all} D={input.dict}"
+
+#Run strelka for somatic mutation analysis
+#makes two vcfs for snvs and indels respectively
+#WARNING only works with bwa aligned bam for now
+rule strelka_run:
+    input:
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.bai",
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam.bai",
+        reference=_get_ref,
+        case="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
+        control="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam"
+    output:
+        snp="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}/results/passed.somatic.snvs.vcf",
+        indel="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}/results/passed.somatic.indels.vcf"
+    threads: 8
+    params:
+        outpath="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}"
+    shell:
+        "rm -rf {params.outpath} && "
+        "{config[tools][strelka]}/bin/configureStrelkaWorkflow.pl --normal={input.control} --tumor={input.case} "
+        "--ref={input.reference} --config={config[tools][strelka]}/etc/strelka_config_bwa_{wildcards.method}.ini "
+        "--output-dir={params.outpath} && make -j {threads} -C {params.outpath}"

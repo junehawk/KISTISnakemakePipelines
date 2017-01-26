@@ -1,0 +1,154 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+#Run picard sorsam for sorting bam file according to the coordination
+rule picard_sortsam:
+    input:
+        "{prefix}.sam"
+    output:
+        temp("{prefix,[^.]+}.sorted.bam")
+    log:
+        "log/{prefix}.sortsam.log"
+    shell:
+        "java -Xmx16g -Djava.io.tmpdir={config[tmp_path]} "
+        "-jar {config[tools][picard]} SortSam "
+        "INPUT={input} "
+        "OUTPUT={output} "
+        "VALIDATION_STRINGENCY=LENIENT "
+        "SORT_ORDER=coordinate "
+        "CREATE_INDEX=true >& {log}"
+
+#Index bam file using sambamba
+rule bam_index:
+    input:
+        "{prefix}.bam"
+    output:
+        "{prefix}.bam.bai"
+    threads: 8
+    shell:
+        "{config[tools][sambamba]} index -t {threads} {input}"
+
+#Marking PCR duplicates using picard MarkDuplicates
+rule picard_dedup:
+    input:
+        "{prefix}.sorted.bam.bai",
+        bam="{prefix}.sorted.bam"
+    output:
+        dedup=temp("{prefix}.marked.bam"),
+        metrics=temp("{prefix}.metrics")
+    log:
+        "log/{prefix}.dedup.log"
+    shell:
+        "java -Xmx16g -Djava.io.tmpdir={config[tmp_path]} "
+        "-jar {config[tools][picard]} MarkDuplicates "
+        "INPUT={input.bam} "
+        "OUTPUT={output.dedup} "
+        "METRICS_FILE={output.metrics} "
+        "CREATE_INDEX=true "
+        "VALIDATION_STRINGENCY=LENIENT  >& {log}"
+
+#Realigning bam files using *.realign.interval file with GATK IndelRealigner
+rule gatk_realign_bam:
+    input:
+        reference=_get_ref,
+        bam="mapping/{ref}/{alg}/{prefix}.bam",
+        intervals="mapping/{ref}/{alg}/{prefix}.realign.intervals"
+    output:
+        temp("mapping/{ref}/{alg}/{prefix}.realigned.bam")
+    params:
+        custom=config.get("params_gatk", "")
+    threads: 4
+    log:
+        "log/mapping/{ref}/{alg}/{prefix}.realign.log"
+    shell:
+        "java -Xmx16g -jar {config[tools][gatk]} "
+        "-T IndelRealigner -R {input.reference} {params.custom} "
+        "-known {config[known_variants][mills]} "
+        "--disable_auto_index_creation_and_locking_when_reading_rods "
+        "-I {input.bam} -targetIntervals {input.intervals} "
+        "-o {output} >& {log}"
+
+#Seeks regions for realign using GATK RealignerTargetCreator
+rule gatk_realign_info:
+    input:
+        "mapping/{ref}/{alg}/{prefix}.bam.bai",
+        reference=_get_ref,
+        bam="mapping/{ref}/{alg}/{prefix}.bam"
+    output:
+        temp("mapping/{ref}/{alg}/{prefix}.realign.intervals")
+    params:
+        custom=config.get("params_gatk", "")
+    log:
+        "log/mapping/{ref}/{alg}/{prefix}.realign_info.log"
+    threads: 8
+    shell:
+        "java -Xmx16g -jar {config[tools][gatk]} "
+        "-T RealignerTargetCreator -R {input.reference} {params.custom} "
+        "-nt {threads} "
+        "-I {input.bam} "
+        "-known {config[known_variants][mills]} "
+        "--disable_auto_index_creation_and_locking_when_reading_rods "
+        "-o {output} >& {log}"
+
+#Run picard to fix mate information in a bam file
+rule picard_fixmate:
+    input:
+        "{prefix}.bam.bai",
+        bam="{prefix}.bam"
+    output:
+        temp("{prefix}.fixed.bam")
+    log:
+        "log/{prefix}.fixmate.log"
+    shell:
+        "java -Xmx16g -Djava.io.tmpdir={config[tmp_path]} "
+        "-jar {config[tools][picard]} FixMateInformation "
+        "INPUT={input.bam} "
+        "OUTPUT={output} "
+        "SORT_ORDER=coordinate "
+        "VALIDATION_STRINGENCY=LENIENT "
+        "CREATE_INDEX=true >& {log}"
+
+#Run GATK PrintReads to apply base recalibration result to bam
+rule gatk_recalibrate_bam:
+    input:
+        reference=_get_ref,
+        bam="mapping/{ref}/{alg}/{prefix}.bam",
+        grp="mapping/{ref}/{alg}/{prefix}.recal.grp"
+    output:
+        "mapping/{ref}/{alg}/{prefix,[^/]+}.recal.bam"
+    params:
+        custom=config.get("params_gatk", "")
+    log:
+        "log/mapping/{ref}/{alg}/{prefix}.recalibrate.log"
+    threads: 8
+    shell:
+        "java -Xmx16g -jar {config[tools][gatk]} "
+        "-T PrintReads -R {input.reference} {params.custom} "
+        "-nct {threads} "
+        "--disable_bam_indexing "
+        "--disable_auto_index_creation_and_locking_when_reading_rods "
+        "-I {input.bam} -BQSR {input.grp} "
+        "-o {output} >& {log}"
+
+#Run GATK BaseRecalibrator for recalibrating base quality recalibration
+rule gatk_recalibrate_info:
+    input:
+        "mapping/{ref}/{alg}/{prefix}.bam.bai",
+        reference=_get_ref, 
+        bam="mapping/{ref}/{alg}/{prefix}.bam"
+    output:
+        temp("mapping/{ref}/{alg}/{prefix}.recal.grp")
+    params:
+        custom=config.get("params_gatk_recal", "")
+    log:
+        "log/mapping/{ref}/{alg}/{prefix}.recalibrate_info.log"
+    threads: 8
+    shell:
+        "java -Xmx24g -jar {config[tools][gatk]} "
+        "-T BaseRecalibrator -R {input.reference} {params.custom} "
+        "-nct {threads} "
+        "-I {input.bam} -knownSites {config[known_variants][dbsnp]} "
+        "--disable_auto_index_creation_and_locking_when_reading_rods "
+        "-knownSites {config[known_variants][mills]} "
+        "-o {output} >& {log}"

@@ -1,0 +1,10 @@
+#Run fastqc for validating quality of fastq files
+rule fastqc:
+    input:
+        "fastq/{prefix}.fastq.gz"
+    output:
+        "qc/{prefix}_fastqc.zip"
+    threads: 8
+    priority: 4
+    shell:
+        "{config[tools][fastqc]} -o qc -t {threads} {input}"

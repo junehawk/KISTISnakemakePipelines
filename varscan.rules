@@ -1,0 +1,91 @@
+import os,sys
+
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+def _get_bams(wildcards):
+    SAMPLE, = glob_wildcards("fastq/{sample,[^.]+}_1.fastq.gz")
+    return sorted(expand("mapping/{ref}/{alg}/{sample}.{processed}.bam", ref=wildcards.ref, alg=wildcards.alg, processed=wildcards.processed, sample=SAMPLE))
+
+def _get_sample_ids(bams):
+    return "\n".join(os.path.basename(f).split('.')[0] for f in sorted(bams))
+
+#devide whole chromosome into size of 50000000 for parallized execution of freebayes
+def _get_regions(pattern):
+    def apply(wildcards):
+        ref = _get_ref(wildcards)
+        with open(ref + ".test.fai") as f:
+            regions = []
+            for line in f:
+                fields = line.strip().split("\t")
+                chrom_name = fields[0]
+                region = chrom_name
+                regions.append(region)
+        return expand(
+            pattern,
+            ref=wildcards.ref,
+            alg=wildcards.alg,
+            processed=wildcards.processed,
+            region=regions)
+    return apply
+
+rule varscan_run_single:
+    input:
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam.bai",
+        reference=_get_ref,
+        bam="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam"
+    output:
+        snp="variant_calling/{ref}/{alg}/varscan/{project}-{disease}-{participant}-{control}-{method}-{platform}.{processed}.vcf"
+    threads: 16
+    shell:
+        "{config[tools][samtools]} mpileup -B -f {input.reference} {input.bam} | java -jar {config[tools][varscan]}  mpileup2snp --output-vcf > {output.snp}"
+
+rule varscan_create_samplelist:
+    input:
+        bams=_get_bams
+    output:
+        temp("variant_calling/{ref}/{alg}/varscan/samplelist.{processed}.txt")
+    run:
+        sampleids=_get_sample_ids(input.bams)
+        shell(
+            "echo \"{sampleids}\" > {output}"
+        )
+
+rule varscan_run_all:
+    input:
+        reference=_get_ref,
+        bams=_get_bams,
+        samplelist="variant_calling/{ref}/{alg}/varscan/samplelist.{processed}.txt"
+    params:
+        custom=config.get("params_varscan", "")
+    output:
+        snp="variant_calling/{ref}/{alg}/varscan/all.{processed}.vcf"
+    threads: 4
+    shell:
+        "{config[tools][samtools]} mpileup -B -f {input.reference} {input.bams} | java -jar {config[tools][varscan]}  mpileup2cns {params.custom} --output-vcf --variants --vcf-sample-list {input.samplelist} > {output.snp}"
+
+
+rule varscan_run_region:
+    input:
+        reference=_get_ref,
+        bams=_get_bams,
+        samplelist="variant_calling/{ref}/{alg}/varscan/samplelist.{processed}.txt"
+    params:
+        custom=config.get("params_varscan", "")
+    output:
+        temp("variant_calling/{ref}/{alg}/varscan/varscan_{region}_{processed}.vcf"
+    threads: 4
+    shell:
+        "{config[tools][samtools]} mpileup -B -r {wildcards.region} -f {input.reference} {input.bams} | java -jar {config[tools][varscan]}  mpileup2cns {params.custom} --output-vcf --variants --vcf-sample-list {input.samplelist} > {output}"
+
+
+rule varscan_merge:
+    input:
+        _get_regions("variant_calling/{ref}/{alg}/varscan/varscan_{region}_{processed}.vcf")
+    output:
+        snp="variant_calling/{ref}/{alg}/varscan/all.{processed}.merged.vcf"
+    log:
+        "log/variant_calling/{ref}/{alg}/varscan_all.{processed}.log"
+    shell:
+        "{config[tools][vcftools]}/vcf-concat {input} > {output} 2> {log}"

@@ -1,0 +1,19 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+rule run_retroseq:
+    input:
+        bam="mapping/{ref}/{alg}/{prefix}.bam",
+        reference=_get_ref
+    output:
+        "sv/retroseq/{ref}/{alg}/{prefix}/{prefix}.bam.vcf"
+    params:
+        path="sv/retroseq/{ref}/{alg}/{prefix}",
+        inter_result="{prefix}.bam.candidate.tab"
+        final_result="{prefix}.bam.vcf"
+    shell:
+        "export PATH=/cluster/bio/samtools:/cluster/ngs/bedtools2/bin:/cluster/ngs/exonerate-2.2.0-x86_64/bin:$PATH && "
+        "cd {params.path} && "
+        "perl {config[tools][retroseq]} -discover -bam {input.bam} -output {params.inter_results} -refTEs TEBeds.tab -eref probes.tab -exd exclude_regions.fofn && "
+        "perl {config[tools][retroseq]} -call -bam {input.bam} -input {params.inter_results} -ref {input.reference} -output {params.final_result} -filter TEBeds.tab"
