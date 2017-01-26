@@ -1,0 +1,26 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+def _get_popfile(wildcards):
+    return config["db"]["popfile"]
+
+#run ContEst for QC
+rule ContEst:
+    input:
+        reference=_get_ref,
+        case="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
+        normal="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam",
+        popfile=_get_popfile
+    output:
+        "qc/{ref}/{alg}/ContEst/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}.contest.txt"
+    threads: 4
+    priority: 4
+    shell:
+        "java -Xmx16g -jar {config[tools][gatk]} -T ContEst "
+        "-R {input.reference} "
+        "-I:eval {input.case} "
+        "-I:genotype {input.normal} "
+        "--popfile {input.popfile} " #/blues/juneh/test/GRCh38_population_stratified_af_hapmap_3.3.vcf
+        "-isr INTERSECTION --disable_auto_index_creation_and_locking_when_reading_rods "
+        "-o {output}"
