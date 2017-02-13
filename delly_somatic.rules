@@ -1,21 +1,33 @@
 import os,sys
-
+import os
+import glob
 #get path to reference genome file with name of 'ref'
 def _get_ref(wildcards):
     return config["references"][wildcards.ref]
 
 def _get_all_normal(wildcards):
-    return "TCGA-A6-A566-10A-01D-A28G-10_wgs_Illumina.bam TCGA-AA-3516-10A-01D-1953-10_wgs_Illumina.bam TCGA-AD-6964-10A-01D-1924-10_wgs_Illumina.bam"
+    test = glob.glob("mapping/"+ wildcards.ref+ "/"+wildcards.alg+"/*."+ wildcards.processed + ".bam")
+    result = ""
+    for file in test:
+        if wildcards.tumor not in file:
+            result = result + " " + file
+    return result.strip()
 
 def _get_sample_tsv(wildcards):
-    return "samples.tsv"
-
+    sampleTsv = expand("sv_calling/{ref}/{alg}/samples.tsv", ref=wildcards.ref, alg=wildcards.alg)
+    if os.path.isfile(sampleTsv[0]):
+        return sampleTsv
+    else:
+        os.system(expand("/cluster/ngs/snakemake/rules_test/delly_makeSampleTsv.sh {proc} {cancer} > {sampletsv}", proc=wildcards.processed, cancer=wildcards.tumor, sampletsv=sampleTsv[0])[0])
+        return sampleTsv
 
 rule delly_call_single_pair_somatic:
     input:
         reference=_get_ref,
         tum="mapping/{ref}/{alg}/{project}-{disease}-{id}-{tumor}-{method}-{platform}.{processed}.bam",
-        con="mapping/{ref}/{alg}/{project}-{disease}-{id}-{control}-{method}-{platform}.{processed}.bam"
+        con="mapping/{ref}/{alg}/{project}-{disease}-{id}-{control}-{method}-{platform}.{processed}.bam",
+        tum_index="mapping/{ref}/{alg}/{project}-{disease}-{id}-{tumor}-{method}-{platform}.{processed}.bam.bai",
+        con_index="mapping/{ref}/{alg}/{project}-{disease}-{id}-{control}-{method}-{platform}.{processed}.bam.bai"
     output:
         bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_first.bcf",
         csi="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_first.bcf.csi"
@@ -29,8 +41,8 @@ rule delly_pre_filter_somatic:
         reference=_get_ref,
         sampletsv=_get_sample_tsv
     output:
-        bcf=temp("sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_pre.bcf"),
-        csi=temp("sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_pre.bcf.csi")
+        bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_pre.bcf",
+        csi="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_pre.bcf.csi"
     threads: 4
     shell:
         "{config[tools][delly]} filter -t {wildcards.sv_type} -f somatic "

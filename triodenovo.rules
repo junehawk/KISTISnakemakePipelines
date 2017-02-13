@@ -1,11 +1,12 @@
 rule triodenovo:
     input:
         ped="peds/{family}.ped",
-        vcf="gatk-hc.fmarked_merged.recalibrated_final.norm.vcf.gz"
+        vcf="variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.fmarked_merged.recalibrated_final.norm.vcf.gz"
     output:
-        "{family}_denovo.vcf"
+        "variant_calling/{ref}/{alg}/triodenovo/{family}_denovo.vcf"
     params:
         "--minDepth 10 --minDQ 7"
+    threads: 8
     shell:
         "{config[tools][triodenovo]} --ped {input.ped} {params} --in_vcf {input.vcf} --out_vcf {output}"
 
