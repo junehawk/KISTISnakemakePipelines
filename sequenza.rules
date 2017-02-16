@@ -1,0 +1,35 @@
+def _get_ref_index(wildcards):
+    return config["ref_index"][wildcards.ref]
+
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+def _get_gc(wildcards):
+    return config["db"]["sequenza_gc"][wildcards.ref]
+#now only works with reference 1,2,3, naming
+rule sequenza_pre:
+    input:
+        normal="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{control}-{method}-{platform}.{processed}.bam",
+        tumor ="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{case}-{method}-{platform}.{processed}.bam",
+        gc    =_get_gc,
+        reference=_get_ref
+    output:
+        "qc/{ref}/{alg}/sequenza/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}.small.seqz.gz"
+    threads: 8 
+    shell:
+        "source /cluster/ngs/utils/miniconda/bin/activate root && "
+        "/cluster/ngs/sequenza/sequenza-utils2.py bam2seqz "
+        "-n {input.normal} -t {input.tumor} -gc {input.gc} -F {input.reference} -S {config[tools][samtools]} | "
+        "/cluster/ngs/sequenza/sequenza-utils.py seqz-binning -w 100 -s /dev/stdin | "
+        "gzip > {output}"
+
+rule sequenza_R:
+    input:
+        seqz = "qc/{ref}/{alg}/sequenza/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}.small.seqz.gz"
+    output: "qc/{ref}/{alg}/sequenza/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}_confints_CP.txt"
+    threads: 8
+    params:
+        outdir="qc/{ref}/{alg}/sequenza/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}"
+    shell:
+        "Rscript /cluster/ngs/sequenza/run_sequenza.R {input.seqz} {params.outdir}"
