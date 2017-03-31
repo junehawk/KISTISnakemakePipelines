@@ -5,7 +5,7 @@ def _get_ref(wildcards):
     return config["references"][wildcards.ref]
 
 def _delly_get_bcfs(wildcards):
-    SAMPLE, = glob_wildcards("fastq/{sample,[^.]+}_1.fastq.gz")
+    SAMPLE, = glob_wildcards("fastq/{sample,[^./]+}_1.fastq.gz")
     return sorted(expand(
             "sv_calling/{ref}/{alg}/delly/{sample}.{processed}_{sv_type}_{stage}.bcf",
             sample=SAMPLE,
@@ -16,7 +16,7 @@ def _delly_get_bcfs(wildcards):
             stage=wildcards.stage))
 
 def _delly_get_csis(wildcards):
-    SAMPLE, = glob_wildcards("fastq/{sample,[^.]+}_1.fastq.gz")
+    SAMPLE, = glob_wildcards("fastq/{sample,[^./]+}_1.fastq.gz")
     return sorted(expand(
             "sv_calling/{ref}/{alg}/delly/{sample}.{processed}_{sv_type}_{stage}.bcf.csi",
             sample=SAMPLE,
@@ -33,6 +33,7 @@ rule delly_call_by_sample:
     output:
         bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{sample}-{method}-{platform}.{processed}_{sv_type}_first.bcf",
         csi="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{sample}-{method}-{platform}.{processed}_{sv_type}_first.bcf.csi"
+    threads: 4
     shell:
         "{config[tools][delly]} call -t {wildcards.sv_type} -g {input.reference} -o {output.bcf} -x {config[db][delly_excl]} {input.bam}"
 
@@ -40,8 +41,8 @@ rule delly_merge_call_by_sample:
     input:
         bcfs=_delly_get_bcfs
     output:
-        bcf=temp("sv_calling/{ref}/{alg}/delly/merged.{processed}_{sv_type}_{stage}.bcf"),
-        csi=temp("sv_calling/{ref}/{alg}/delly/merged.{processed}_{sv_type}_{stage}.bcf.csi")
+        bcf="sv_calling/{ref}/{alg}/delly/merged.{processed}_{sv_type}_{stage}.bcf",
+        csi="sv_calling/{ref}/{alg}/delly/merged.{processed}_{sv_type}_{stage}.bcf.csi"
     shell:
         "{config[tools][delly]} merge -t {wildcards.sv_type} -m 500 -n 1000000 -o {output.bcf} -b 500 -r 0.5 {input.bcfs}"
 
@@ -52,7 +53,7 @@ rule delly_regenotype:
         bam="mapping/{ref}/{alg}/{project}-{disease}-{id}-{sample}-{method}-{platform}.{processed}.bam",
         bcf="sv_calling/{ref}/{alg}/delly/merged.{processed}_{sv_type}_first.bcf"
     output:
-        bcf=temp("sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{sample}-{method}-{platform}.{processed}_{sv_type}_final.bcf")
+        bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{sample}-{method}-{platform,[^.]+}.{processed}_{sv_type}_final.bcf"
     shell:
         "{config[tools][delly]} call -t  {wildcards.sv_type} -g {input.reference} -v {input.bcf} "
         "-o {output.bcf} -x {config[db][delly_excl]} {input.bam}"
