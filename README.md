@@ -1,4 +1,4 @@
-#KISTI snakemake pipelines
+# KISTI snakemake pipelines
 
 ## Description
 
