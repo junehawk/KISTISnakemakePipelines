@@ -3,8 +3,9 @@ rule vcf_gz:
     output:
         gziped="{prefix}.vcf.gz",
         index="{prefix}.vcf.gz.gzi"
+    threads: 8
     shell:
-        "{config[tools][bgzip]} -i {input}"
+        "{config[tools][bgzip]} -@ {threads} -ic {input} > {output.gziped}"
 
 rule vcf_gz_index:
     input: 

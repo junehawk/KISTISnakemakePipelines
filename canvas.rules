@@ -1,0 +1,28 @@
+import os,sys
+
+#get path to reference genome file with name of 'ref'
+def _get_canvas_ref(wildcards):
+    return config["ref_paths"][wildcards.ref] + "/canvas_ref"
+
+rule canvas_call:
+    input:
+        bam="mapping/{ref}/{alg}/{project}-{disease}-{id}-{sample}-{method}-{platform}.{processed}.bam",
+        ref_path=_get_canvas_ref
+    output:
+        "cnv_calling/{ref}/{alg}/canvas/{project}-{disease}-{id}-{sample}-{method}-{platform}.{processed}/{project}-{disease}-{id}-{sample}-{method}-{platform}.{processed}.vcf.gz"
+    threads: 16
+    params:
+        CANVAS_OUTPUT_PATH="cnv_calling/{ref}/{alg}/canvas/{project}-{disease}-{id}-{sample}-{method}-{platform}.{processed}",
+        SAMPLE_NAME="{project}-{disease}-{id}-{sample}-{method}-{platform}"
+    shell:
+        "{config[tools][canvas]} "
+        "Germline-WGS "
+        "--bam {input.bam} "
+        "--b-allele-vcf {config[db][dbsnp]} "
+        "--exclude-non-het-b-allele-sites "
+        "--reference {input.ref_path}/kmer.fa "
+        "--genome-folder {input.ref_path}/WholeGenomeFasta/ "
+        "--filter-bed {input.ref_path}/filter13.bed "
+        "--sample-name {params.SAMPLE_NAME} "
+        "--output {params.CANVAS_OUTPUT_PATH} && "
+        "mv {params.CANVAS_OUTPUT_PATH}/CNV.vcf.gz {params.CANVAS_OUTPUT_PATH}/{params.SAMPLE_NAME}.{wildcards.processed}.vcf.gz"

@@ -39,11 +39,11 @@ rule gatk_variant_recalibration:
     params:
         _get_recal_params,
         config.get("params_gatk_var_recal", "")
-    log:
-        "variant_calling/log/{ref}/{alg}/{prefix}.{type}_recalibrate_info.log"
+    #log:
+    #    "variant_calling/log/{ref}/{alg}/{prefix}.{type}_recalibrate_info.log"
     threads: 8
     shell:
-        "java -Xmx16g -jar "
+        "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g -jar "
         "{config[tools][gatk]} "
         "-T VariantRecalibrator -R {input.reference} "
         "-input {input.vcf} "
@@ -52,7 +52,7 @@ rule gatk_variant_recalibration:
         "--disable_auto_index_creation_and_locking_when_reading_rods "
         "-recalFile {output.recal} "
         "-tranchesFile {output.tranches} "
-        "-rscriptFile {output.plotting} >& {log}"
+        "-rscriptFile {output.plotting}"
 
 #Apply variant recalibration result to the vcf file
 rule gatk_apply_variant_recalibration:
@@ -66,16 +66,16 @@ rule gatk_apply_variant_recalibration:
     params:
         mode=lambda wildcards: wildcards.type.upper(),
         custom=config.get("params_gatk_var_recal", "")
-    log:
-        "variant_calling/log/{ref}/{alg}/{prefix}.{type}_recalibrate.log"
+    #log:
+        #"variant_calling/log/{ref}/{alg}/{prefix}.{type}_recalibrate.log"
     threads: 8
     shell:
-        "java -Xmx16g -jar "
+        "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g -jar "
         "{config[tools][gatk]} "
         "-T ApplyRecalibration -R {input.reference} -nt {threads} "
         "-input {input.vcf} -mode {params.mode} {params.custom} "
         "-recalFile {input.recal} --ts_filter_level 99.9 "
-        "-tranchesFile {input.tranches} -o {output} >& {log}"
+        "-tranchesFile {input.tranches} -o {output}"
 
 rule gatk_combine_variants:
     input:
@@ -87,7 +87,7 @@ rule gatk_combine_variants:
     run: 
         variants=_gatk_snp_indel_arg(input.vcfs)
         shell(
-            "java -Xmx16g -jar "
+            "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g -jar "
             "{config[tools][gatk]} "
             "-T CombineVariants -R {input.reference} -nt {threads} "
             "--out {output} {variants} "

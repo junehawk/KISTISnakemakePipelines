@@ -62,7 +62,7 @@ rule gatk_realign_bam:
     log:
         "log/mapping/{ref}/{alg}/{prefix}.realign.log"
     shell:
-        "java -Xmx16g -jar {config[tools][gatk]} "
+        "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g -jar {config[tools][gatk]} "
         "-T IndelRealigner -R {input.reference} {params.custom} "
         "-known {config[known_variants][mills]} "
         "--disable_auto_index_creation_and_locking_when_reading_rods "
@@ -83,7 +83,7 @@ rule gatk_realign_info:
         "log/mapping/{ref}/{alg}/{prefix}.realign_info.log"
     threads: 8
     shell:
-        "java -Xmx16g -jar {config[tools][gatk]} "
+        "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g -jar {config[tools][gatk]} "
         "-T RealignerTargetCreator -R {input.reference} {params.custom} "
         "-nt {threads} "
         "-I {input.bam} "
@@ -123,7 +123,7 @@ rule gatk_recalibrate_bam:
         "log/mapping/{ref}/{alg}/{prefix}.recalibrate.log"
     threads: 8
     shell:
-        "java -Xmx16g -jar {config[tools][gatk]} "
+        "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g -jar {config[tools][gatk]} "
         "-T PrintReads -R {input.reference} {params.custom} "
         "-nct {threads} "
         "--disable_bam_indexing "
@@ -145,7 +145,7 @@ rule gatk_recalibrate_info:
         "log/mapping/{ref}/{alg}/{prefix}.recalibrate_info.log"
     threads: 8
     shell:
-        "java -Xmx24g -jar {config[tools][gatk]} "
+        "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx24g -jar {config[tools][gatk]} "
         "-T BaseRecalibrator -R {input.reference} {params.custom} "
         "-nct {threads} "
         "-I {input.bam} -knownSites {config[known_variants][dbsnp]} "

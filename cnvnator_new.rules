@@ -1,0 +1,58 @@
+import os
+
+#we observed that the optimal bin size, and thus breakpoint resolution accuracy, scales roughly inversely with the coverage, resulting in ∼100-bp bins for 20–30× coverage, ∼500-bp bins for 4–6× coverage, and ∼30-bp bins for ∼100× coverage. However, in the last case, bin size is comparable to read length (∼36 for the data used in this study), and this can compromise breakpoint resolution due to unreliable read mapping around CNV breakpoints.
+
+
+
+def _get_ref_path(wildcards):
+    return config["ref_paths"][wildcards.ref]
+
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+#devide whole chromosome into size of 50000000 for parallized execution of freebayes
+def _cnvnator_get_regions(wildcards):
+    ref = _get_ref(wildcards)
+    with open(ref + ".test.fai") as f:
+        regions = ""
+        for line in f:
+            fields = line.strip().split("\t")
+            chrom_name = fields[0]
+            if regions is "":
+                regions = chrom_name
+            else:
+                regions = regions + " " + chrom_name
+    return regions
+
+rule cnvnator_prep:
+    input:
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.bai",
+        ref_path=_get_ref_path,
+        case="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
+    output:
+        "cnv_calling/{ref}/{alg}/cnvnator/{bin_size}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.root"
+    threads: 8
+    params:
+        regions=_cnvnator_get_regions
+    shell:
+        "HH=$PWD && cd /cluster/ngs/root_v5.34.34 && "
+        "source /cluster/ngs/root_v5.34.34/bin/thisroot.sh && source /cluster/ngs/CNVnator_v0.3.2/src/yeppp-1.0.0/set-vars.sh && "
+        "cd $HH && "
+        "export OMP_THREADS_NUM={threads} && "
+        "{config[tools][cnvnator]} -root {output} -unique -chrom {params.regions} -tree {input.case} && "
+        "{config[tools][cnvnator]} -root {output} -his {wildcards.bin_size} -d {input.ref_path}/byChr && "
+        "{config[tools][cnvnator]} -root {output} -stat {wildcards.bin_size} && "
+        "{config[tools][cnvnator]} -root {output} -partition {wildcards.bin_size}"
+
+
+rule cnvnator_call:
+    input:
+        "cnv_calling/{ref}/{alg}/cnvnator/{bin_size}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.root"
+    output:
+        "cnv_calling/{ref}/{alg}/cnvnator/{bin_size}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.cnv.txt"
+    shell:
+        "HH=$PWD && cd /cluster/ngs/root_v5.34.34 && "
+        "source /cluster/ngs/root_v5.34.34/bin/thisroot.sh && source /cluster/ngs/CNVnator_v0.3.2/src/yeppp-1.0.0/set-vars.sh && "
+        "cd $HH && "
+        "{config[tools][cnvnator]} -root {input} -call {wildcards.bin_size} > {output}"

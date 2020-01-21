@@ -15,7 +15,7 @@ rule strelka_result_merge:
         indel="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}/results/passed.somatic.indels.vcf",
         dict=_get_dict
     output:
-        all="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}.passed.vcf"
+        all="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}.passed.vcf"
     params:
         dict=_get_dict
     shell:
@@ -27,17 +27,17 @@ rule strelka_result_merge:
 #WARNING only works with bwa aligned bam for now
 rule strelka_run:
     input:
-        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.bai",
-        "mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam.bai",
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant}-{case}-{method}-{platform}.{processed}.bam.bai",
+        "mapping/{ref}/{alg}/{project}-{disease}-{participant}-{control}-{method}-{platform}.{processed}.bam.bai",
         reference=_get_ref,
-        case="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
-        control="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam"
+        case="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{case}-{method}-{platform}.{processed}.bam",
+        control="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{control}-{method}-{platform}.{processed}.bam"
     output:
         snp="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}/results/passed.somatic.snvs.vcf",
         indel="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}/results/passed.somatic.indels.vcf"
     threads: 8
     params:
-        outpath="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}"
+        outpath="variant_calling/{ref}/{alg}/strelka/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}"
     shell:
         "rm -rf {params.outpath} && "
         "{config[tools][strelka]}/bin/configureStrelkaWorkflow.pl --normal={input.control} --tumor={input.case} "

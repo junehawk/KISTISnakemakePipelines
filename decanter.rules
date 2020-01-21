@@ -12,22 +12,25 @@ def _get_ethnicity(wildcards):
 rule decanter:
     input:
         reference=_get_ref,
-        bam="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam"
+        bam="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
+        bai="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.bai"
     output:
         "qc/{ref}/{alg}/decanter/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.decanter.report.txt"
         #"qc/{ref}/{alg}/decanter/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.decanter.pdf"
-    threads: 4
+    threads: 8
     priority: 2
     params:
         prefix="qc/{ref}/{alg}/decanter/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam.decanter",
         ethnicity=_get_ethnicity
     shell:
+        #"conda deactivate && "
+        #"source /cluster/ngs/utils/miniconda/bin/activate root && "
         "export PATH=/cluster/ngs/samtools-1.3:/cluster/ngs/bcftools-1.3:$PATH && "
-        "python {config[tools][decanter]} "
+        "/usr/bin/python {config[tools][decanter]} "
         "-S {config[tools][samtools]} "
         "-B {config[tools][bcftools]} "
         "-R {input.reference} "
-        "-D {config[tools][sambamba]} "
+        "-D /cluster/ngs/sambamba/sambamba_v0.6.4 "
         "-b {input.bam} "
         "-o {params.prefix} "
         "{params.ethnicity}"

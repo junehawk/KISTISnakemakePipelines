@@ -1,0 +1,65 @@
+import os,sys
+
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+def _multi_arg(flag, files):
+    flag += " "
+    return " ".join(flag + f for f in files)
+
+def _get_bams(wildcards):
+    l = ['1', '2']
+    t = wildcards.target[-1]
+    l.append(t)
+    return expand("mapping/{ref}/{alg}/{project}-{disease}-{family}{id}-{sample}-{method}-{platform}.{processed}.bam", ref=wildcards.ref, alg=wildcards.alg, project=wildcards.project, disease=wildcards.disease, family=wildcards.target[:-1], id=l, sample=wildcards.sample, method=wildcards.method, platform=wildcards.platform, processed=wildcards.processed)
+
+def _get_bais(wildcards):
+    l = ['1', '2']
+    t = wildcards.target[-1]
+    l.append(t)
+    return expand("mapping/{ref}/{alg}/{project}-{disease}-{family}{id}-{sample}-{method}-{platform}.{processed}.bam.bai", ref=wildcards.ref, alg=wildcards.alg, project=wildcards.project, disease=wildcards.disease, family=wildcards.target[:-1], id=l, sample=wildcards.sample, method=wildcards.method, platform=wildcards.platform, processed=wildcards.processed)
+
+def _get_parents(wildcards):
+    return expand("{project}-{disease}-{family}{id}-{sample}-{method}-{platform}", project=wildcards.project, disease=wildcards.disease, family=wildcards.target[:-1], id=['1','2'], sample=wildcards.sample, method=wildcards.method, platform=wildcards.platform)
+
+rule manta_configure:
+    input:
+        reference=_get_ref,
+        bams=_get_bams,
+        bais=_get_bais
+    output:
+        "sv_calling/{ref}/{alg}/manta/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}/runWorkflow.py"
+    threads: 1
+    params:
+        path="sv_calling/{ref}/{alg}/manta/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}"
+    run:
+        bam_arg = _multi_arg("--bam", input.bams)
+        shell(
+            "{config[tools][manta]}/bin/configManta.py {bam_arg} "
+            "--referenceFasta {input.reference} "
+            "--runDir {params.path}")
+
+rule manta_execution:
+    input:
+        run_script="sv_calling/{ref}/{alg}/manta/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}/runWorkflow.py"
+    output:
+        "sv_calling/{ref}/{alg}/manta/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}.vcf.gz"
+    params:
+        target="sv_calling/{ref}/{alg}/manta/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}/results/variants/diploidSV.vcf.gz"
+    threads: 16
+    shell:
+        "{input.run_script} -m local -j {threads} && cp {params.target} {output}"
+
+rule manta_denovo_call:
+    input:
+        vcf="sv_calling/{ref}/{alg}/manta/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}.vcf.gz"
+    output:
+        "sv_calling/{ref}/{alg}/manta/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}.de_novo.vcf"
+    threads: 1
+    params:
+        parents=_get_parents,
+        proband="{project}-{disease}-{target}-{sample}-{method}-{platform}",
+        vcf="sv_calling/{ref}/{alg}/manta/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}/{project}-{disease}-{target}-{sample}-{method}-{platform}.{processed}.vcf"
+    shell:
+        "{config[tools][bgzip]} -d {input.vcf} && {config[tools][manta]}/libexec/denovo_scoring.py {params.vcf} {params.proband} {params.parents}"

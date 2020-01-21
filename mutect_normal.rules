@@ -19,6 +19,5 @@ rule mutect:
                "--cosmic {config[known_variants][cosmic]} --dbsnp {config[known_variants][dbsnp]} "
                "--reference_sequence {input.reference} "
                "--input_file:normal {input.control} --input_file:tumor {input.case} "
-               "--fraction_contamination 0 "
                "--disable_auto_index_creation_and_locking_when_reading_rods "
                "--vcf {output.vcf} --coverage_file {output.coverage}"

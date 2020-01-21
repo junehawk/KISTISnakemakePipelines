@@ -12,6 +12,8 @@ rule sequenza_pre:
     input:
         normal="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{control}-{method}-{platform}.{processed}.bam",
         tumor ="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{case}-{method}-{platform}.{processed}.bam",
+        normalbai="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{control}-{method}-{platform}.{processed}.bam.bai",
+        tumorbai ="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{case}-{method}-{platform}.{processed}.bam.bai",
         gc    =_get_gc,
         reference=_get_ref
     output:

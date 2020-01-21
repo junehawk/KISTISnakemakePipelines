@@ -1,0 +1,116 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+#devide whole chromosome into size of 50000000 for parallized execution of freebayes
+def _get_regions(pattern):
+    def apply(wildcards):
+        ref = _get_ref(wildcards)
+        with open(ref + ".test.fai") as f:
+            regions = []
+            region_size = 50000000
+            for line in f:
+                fields = line.strip().split("\t")
+                chrom_name = fields[0]
+                chrom_length = int(fields[1])
+                region_start = 0
+                while region_start < chrom_length:
+                    start = region_start
+                    end = region_start + region_size
+                    if end > chrom_length:
+                        end = chrom_length
+                    region = chrom_name + ":" + str(region_start) + "-" + str(end)
+                    regions.append(region)
+                    region_start = end
+            return expand(
+                pattern,
+                ref=wildcards.ref,
+                alg=wildcards.alg,
+                processed=wildcards.processed,
+                region=regions)
+    return apply
+
+#Get all bam file paths and names in 'SAMPLE' variables
+def _get_bams(wildcards):
+    SAMPLE, = glob_wildcards("fastq/{sample,[^./]+}_1.fastq.gz")
+    return sorted(expand("mapping/{ref}/{alg}/{sample}.{processed}.bam", ref=wildcards.ref, alg=wildcards.alg, processed=wildcards.processed, sample=SAMPLE))
+
+def _get_vcf_gzs(wildcards):
+    SAMPLE, = glob_wildcards("fastq/{sample,[^./]+}_1.fastq.gz")
+    return sorted(expand("variant_calling/{ref}/{alg}/freebayes/{sample}.{processed}.vcf.gz", ref=wildcards.ref, alg=wildcards.alg, processed=wildcards.processed, sample=SAMPLE))
+
+rule freebayes_single:
+    input:
+        reference=_get_ref,
+        bam = "mapping/{ref}/{alg}/{prefix}.{processed}.bam"
+    output:
+        "variant_calling/{ref}/{alg}/freebayes/{prefix}.{processed}.vcf.gz"
+    params:
+        custom=config.get("params_freebayes", "")
+    threads: 4
+    shell:
+        "{config[tools][freebayes]} --ploidy {config[ploidy]} "
+        "--fasta-reference {input.reference} "
+        "--genotype-qualities --strict-vcf --min-repeat-entropy 1  --no-partial-observations "
+        "{params.custom} "
+        "{input.bam} | "
+        "{config[tools][bcftools]} filter -i 'ALT=\"<*>\" || QUAL > 5' "
+        "| awk -F$'\t' -v OFS='\t' '{{if ($0 !~ /^#/) gsub(/[KMRYSWBVHDX]/, \"N\", $4) }} {{print}}' | "
+        "{config[tools][bcftools]} view -a - | "
+        "python {config[freebayes_vcflib]}/remove_missingalt.py | "
+        "{config[freebayes_vcflib]}/vcfallelicprimitives -t DECOMPOSED --keep-geno | "
+        "{config[freebayes_vcflib]}/vcffixup - | "
+        "{config[freebayes_vcflib]}/vcfstreamsort | "
+        "{config[tools][vt]} normalize -n -r {input.reference} -q - 2> /dev/null | "
+        "{config[freebayes_vcflib]}/vcfuniqalleles | "
+        "{config[tools][bgzip]} -c"
+        " > {output} "
+
+
+rule freebayes_joint:
+    input:
+        reference=_get_ref,
+        bams=_get_bams,
+        vcfgzs=_get_vcf_gzs
+    output:
+        vcf = "variant_calling/{ref}/{alg}/freebayes/{region}/freebayes_{region}_{processed}.vcf"
+    threads: 16
+    shell:
+        "export PATH=/cluster/ngs/sambamba:/cluster/ngs/freebayes/vcflib/bin/:/cluster/ngs/tmp/gatk-framework-3.5-21:/cluster/ngs/bedtools2/bin/:/cluster/ngs/bcftools-1.3:/cluster/ngs/samtools-1.3/htslib-1.3/:/cluster/ngs/samtools-1.3/:/cluster/ngs/freebayes/bin:$PATH && "
+        "/cluster/ngs/freebayes/recall/bcbio-variation-recall square "
+        "-r {wildcards.region} -c {threads} "
+        "{output} {input.reference} "
+        "{input.vcfgzs} {input.bams}"
+
+
+#Merge freebayes called variant files for each sample for genotyping
+#rule freebayes_merge:
+#    input:
+#        _get_regions("variant_calling/{ref}/{alg}/freebayes/{region}/freebayes_{region}_{processed}.vcf")
+#    output:
+#        "variant_calling/{ref}/{alg}/freebayes/all.{processed}.merged.vcf"
+#    log:
+#        "log/variant_calling/{ref}/{alg}/freebayes_all.{processed}.log"
+#    shell:
+#        "{config[tools][vcftools]}/vcf-concat {input} > {output} 2> {log}"
+rule freebayes_merge2:
+    input:
+        vcf=_get_regions("variant_calling/{ref}/{alg}/freebayes/{region}/freebayes_{region}_{processed}.vcf.gz"),
+        tbi=_get_regions("variant_calling/{ref}/{alg}/freebayes/{region}/freebayes_{region}_{processed}.vcf.gz.tbi")
+    output:
+        "variant_calling/{ref}/{alg}/freebayes/all.{processed}.merged.vcf.gz"
+    log:
+        "log/variant_calling/{ref}/{alg}/freebayes_all.{processed}.log"
+    threads: 4
+    shell:
+        "{config[tools][bcftools]} concat -a -O z -o {output} --threads {threads} {input.vcf}"
+
+#Filter freebayes called variants by hard filter
+rule freebayes_filter:
+    input:
+        "variant_calling/{ref}/{alg}/freebayes/{prefix}.vcf.gz"
+    output:
+        "variant_calling/{ref}/{alg}/freebayes/{prefix}.filtered.vcf.gz"
+    shell:
+        "java -jar /cluster/ngs/snpEff4.2/SnpSift.jar filter -n '( ( AF = 0.5 | AF < 0.5 ) & ( DP < 4 | ( DP < 13 & QUAL <10 ) ) ) | ( AF > 0.5 & ( DP < 4 & QUAL < 50 ) )' -f {input} | {config[tools][bgzip]} -c > {output}"
+        #"{config[freebayes_vcflib]}/vcffilter -f '( ( AF = 0.5 | AF < 0.5 ) & ( DP < 4 | ( DP < 13 & QUAL <10 ) ) ) | ( AF > 0.5 & ( DP < 4 & QUAL < 50 ) )' -s -v {input} > {output}"

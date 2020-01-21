@@ -1,0 +1,19 @@
+def _getSVDprefix(wildcards):
+    if(wildcards.ref == 'gatk_b38'):
+        return '/cluster/ngs/VerifyBamID/resource/1000g.phase3.100k.b38.vcf.gz.dat'
+    else:
+        return '/cluster/ngs/VerifyBamID/resource/1000g.phase3.100k.b37.vcf.gz.dat'
+
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+rule verifybamid:
+    input: bam="mapping/{ref}/{alg}/{prefix}.bam",
+        reference = _get_ref
+    output: "qc/{ref}/{alg}/verifybamid/{prefix}.out"
+    params: svd=_getSVDprefix,
+        output_prefix = "qc/{ref}/{alg}/verifybamid/{prefix}"
+    threads: 4
+    shell: "/cluster/ngs/VerifyBamID/bin/VerifyBamID --SVDPrefix {params.svd} "
+        "--BamFile {input.bam} --Reference {input.reference} "
+        "--Output {params.output_prefix}"

@@ -1,0 +1,74 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+def _get_samples(wildcards):
+    samples = "1 2 3".split()
+    options = expand(
+        "{project}-{disease}-{family}{ids}-{sample}-{methods}-{platform}",
+        project=wildcards.project,
+        disease=wildcards.disease,
+        family=wildcards.family,
+        ids=samples,
+        sample=wildcards.sample,
+        methods=wildcards.methods,
+        platform=wildcards.platform)
+    return ",".join(options)
+
+#rule selectVariantsByFamily:
+#    input:
+#        vcf = "variant_calling/{ref}/{alg}/{caller}/gatk-hc.{process}_merged.recalibrated_final.vcf.gz"
+#    output:
+#        "variant_calling/{ref}/{alg}/{caller}/family-wise/{project}-{disease}-{family}-{sample}-{methods}-{platform,[^.]+}.{process,[^/_]+}.vcf.gz"
+#    threads: 4
+#    params:
+#        samples=_get_samples
+#    shell:
+#        "bcftools view -s {params.samples} -c 1 "
+#        "-o {output} -O z --threads {threads} "
+#        "{input.vcf}"
+
+rule CalculateGenotypePosteriors:
+    input:
+        reference=_get_ref,
+        ped="peds/{family}.ped",
+        vcf="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.vcf.gz.tbi"
+    output:
+        v="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}_postCGP.vcf.gz"
+        #i=temp("variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}_postCGP.vcf.gz.tbi")
+    threads: 8
+    shell:
+        "java -Xmx16G -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -jar {config[tools][gatk]} -R {input.reference} -T CalculateGenotypePosteriors "
+        "--supporting {config[db][1000G_db]} -ped {input.ped} -V {input.vcf} -o {output.v} "
+        #"--disable_auto_index_creation_and_locking_when_reading_rods"
+
+rule filterLowQualityGenotypes:
+    input:
+        reference=_get_ref,
+        vcf="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}_postCGP.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}_postCGP.vcf.gz.tbi"
+    output:
+        v=temp("variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}_postCGP.Gfiltered.vcf.gz")
+        #i=temp("variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}_postCGP.Gfiltered.vcf.gz.tbi")
+    threads: 8
+    shell:
+        "java -Xmx16G -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -jar {config[tools][gatk]} -T VariantFiltration -R {input.reference} "
+        "-V {input.vcf} -G_filter \"GQ < 20.0\" -G_filterName lowGQ "
+        "-o {output.v} "
+        #"--disable_auto_index_creation_and_locking_when_reading_rods"
+
+rule annotateDeNovo:
+    input:
+        reference=_get_ref,
+        ped="peds/{family}.ped",
+        vcf="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}_postCGP.Gfiltered.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}_postCGP.Gfiltered.vcf.gz.tbi"
+    output:
+        "variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}_postCGP.Gfilterd.deNovos.vcf.gz"
+    threads: 8
+    shell:
+        "java -Xmx16G -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -jar {config[tools][gatk]} -T VariantAnnotator -R {input.reference} "
+        "-V {input.vcf} -A PossibleDeNovo -ped {input.ped} "
+        "-o {output} "
+        #"--disable_auto_index_creation_and_locking_when_reading_rods"

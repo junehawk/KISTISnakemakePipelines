@@ -1,0 +1,25 @@
+import os,sys
+import os
+import glob
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+rule delly_call_single_pair_somatic:
+    input:
+        reference=_get_ref,
+        tum="mapping/{ref}/{alg}/{project}-{disease}-{id}-{tumor}-{method}-{platform}.{processed}.bam",
+        con="mapping/{ref}/{alg}/{project}-{disease}-{id}-{control}-{method}-{platform}.{processed}.bam",
+        tum_index="mapping/{ref}/{alg}/{project}-{disease}-{id}-{tumor}-{method}-{platform}.{processed}.bam.bai",
+        con_index="mapping/{ref}/{alg}/{project}-{disease}-{id}-{control}-{method}-{platform}.{processed}.bam.bai"
+    output:
+        bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_first.bcf",
+        csi="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{tumor}_{control}-{method}-{platform}.{processed}_{sv_type}_first.bcf.csi"
+    threads: 4
+    shell:
+        "{config[tools][delly]} call -t {wildcards.sv_type} -n -g {input.reference} -q 15 -o {output.bcf} {input.tum} {input.con}"
+
+rule bcf_index:
+    input: "{prefix}.bcf"
+    output: "{prefix}.bcf.csi"
+    shell: "/cluster/ngs/delly/src/bcftools/bcftools index {input}"

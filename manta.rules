@@ -25,10 +25,13 @@ def _multi_arg(flag, files):
 def _get_bams(wildcards):
     return expand("mapping/{ref}/{alg}/{project}-{disease}-{family}{id}-{sample}-{method}-{platform}.{processed}.bam", ref=wildcards.ref, alg=wildcards.alg, project=wildcards.project, disease=wildcards.disease, family=wildcards.family, id=[1,2,3], sample=wildcards.sample, method=wildcards.method, platform=wildcards.platform, processed=wildcards.processed)
 
+def _get_bais(wildcards):
+    return expand("mapping/{ref}/{alg}/{project}-{disease}-{family}{id}-{sample}-{method}-{platform}.{processed}.bam.bai", ref=wildcards.ref, alg=wildcards.alg, project=wildcards.project, disease=wildcards.disease, family=wildcards.family, id=[1,2,3], sample=wildcards.sample, method=wildcards.method, platform=wildcards.platform, processed=wildcards.processed)
 rule manta_configure:
     input:
         reference=_get_ref,
-        bams=_get_bams
+        bams=_get_bams,
+        bais=_get_bais
     output:
         "sv_calling/{ref}/{alg}/manta/{project}-{disease}-{family}3-{sample}-{method}-{platform}.{processed}/runWorkflow.py"
     threads: 1

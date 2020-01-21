@@ -1,0 +1,12 @@
+{
+    "__default__" :
+    {
+        "walltime" : "720:00:00",
+        "nodes" : 1,
+        "queue" : "blast"
+    },
+    "gatk_recalibrate_info" :
+    {
+        "queue" : "highmem"
+    }
+}

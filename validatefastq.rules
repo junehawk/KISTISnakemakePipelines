@@ -1,0 +1,10 @@
+rule validatefastq:
+    input:
+        i="fastq/{prefix}_1.fastq.gz",
+        j="fastq/{prefix}_2.fastq.gz"
+    output: "qc/{prefix}.validatefastq.txt"
+    threads: 8
+    shell:
+        "/cluster/ngs/jdk1.8.0_60/bin/java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g "
+        "-jar /cluster/ngs/validatefastq_0.1.1/validatefastq-assembly-0.1.1.jar "
+        "-i {input.i} -j {input.j} 2>&1 | tee {output}"

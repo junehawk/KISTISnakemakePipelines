@@ -54,8 +54,9 @@ rule delly_regenotype:
         bcf="sv_calling/{ref}/{alg}/delly/merged.{processed}_{sv_type}_first.bcf"
     output:
         bcf="sv_calling/{ref}/{alg}/delly/{project}-{disease}-{id}-{sample}-{method}-{platform,[^.]+}.{processed}_{sv_type}_final.bcf"
+    threads: 4
     shell:
-        "{config[tools][delly]} call -t  {wildcards.sv_type} -g {input.reference} -v {input.bcf} "
+        "export OMP_NUM_THREADS={threads} && {config[tools][delly]} call -t  {wildcards.sv_type} -g {input.reference} -v {input.bcf} "
         "-o {output.bcf} -x {config[db][delly_excl]} {input.bam}"
 
 rule delly_merge_regenotyped:
@@ -63,7 +64,7 @@ rule delly_merge_regenotyped:
         bcfs=_delly_get_bcfs,
         csis=_delly_get_csis,
     output:
-        "sv_calling/{ref}/{alg}/delly/all.{processed}_{sv_type}_germline_{stage}.bcf"
+        "sv_calling/{ref}/{alg}/delly/all.{processed}_{sv_type}_germline_{stage,[^_]+}.bcf"
     shell:
         "/cluster/ngs/delly/src/bcftools/bcftools merge -O b -o {output} {input.bcfs}"
 

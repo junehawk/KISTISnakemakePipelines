@@ -49,7 +49,8 @@
         "bcftools": "/cluster/ngs/bcftools-1.3/bcftools",
         "tabix": "/cluster/ngs/utils/htslib-1.3/tabix",
         "vecuum": "/cluster/ngs/Vecuum/Vecuum.jar",
-        "qualimap": "/cluster/ngs/qualimap_v2.2.1/qualimap"
+        "qualimap": "/cluster/ngs/qualimap_v2.2.1/qualimap",
+        "MELT": "/cluster/ngs/MELTv2.1.5/MELT.jar"
     },
     "snpeff_db": {
         "gatk_b38": "GRCh38.79",

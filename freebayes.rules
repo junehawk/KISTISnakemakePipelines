@@ -48,7 +48,7 @@ rule freebayes:
         custom=config.get("params_freebayes", "")
     log:
         "log/variant_calling/{ref}/{alg}/freebayes_{region}_genotype.{processed}.log"
-    threads: 4
+    threads: 8
     shell:
         "{config[tools][freebayes]} -r {wildcards.region} "
         "--ploidy {config[ploidy]} --fasta-reference {input.reference} "

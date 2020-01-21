@@ -48,11 +48,12 @@ def _get_gatk_result_vcfs(wildcards):
             region = chrom_name
             regions.append(region)
     return expand(
-        "variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed}.{region}.vcf.gz",
+        "variant_calling/{ref}/{alg}/gatk_hc_family/{family}.{processed}.{region}.vcf.gz",
         ref=wildcards.ref,
         alg=wildcards.alg,
         processed=wildcards.processed,
-        region=regions)
+        region=regions,
+        family=wildcards.family)
 
 #Run gatk haplotype caller on a bam with default parameters
 rule gatk_haplotype_caller:
@@ -65,11 +66,11 @@ rule gatk_haplotype_caller:
         idx="variant_calling/{ref}/{alg}/gatk_hc/{sample}.{processed,[^_]+}.g.vcf.gz.tbi"
     params:
         custom=config.get("params_gatk", "")
-    #log:
-    #    "log/variant_calling/{ref}/{alg}/gatk_hc/{sample}.gatk_hc.genotype_info.log"
+    log:
+        "log/variant_calling/{ref}/{alg}/gatk_hc/{sample}.gatk_hc.genotype_info.log"
     threads: 4 # haplotype caller currently does not reliably use more than 2 threads
     shell:
-        "java -Xmx16g -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -jar "
+        "java -Xmx16g -jar "
         "{config[tools][gatk]} "
         "-T HaplotypeCaller -R {input.reference} -I {input.bam} {params.custom} "
         "--disable_auto_index_creation_and_locking_when_reading_rods "
@@ -77,7 +78,7 @@ rule gatk_haplotype_caller:
         "--heterozygosity {config[heterozygosity]} "
         "--indel_heterozygosity {config[indel_heterozygosity]} "
         "--dbsnp {config[known_variants][dbsnp]} -nct 2 "
-        "--variant_index_parameter 128000 -o {output.gvcf}"
+        "--variant_index_parameter 128000 -o {output.gvcf} >& {log}"
 
 rule gatk_combine_by_chr:
     input:
@@ -85,11 +86,11 @@ rule gatk_combine_by_chr:
         variants=_get_variants
     output:
         "variant_calling/{ref}/{alg}/gatk_hc/combined/{index}_{processed,[^_]+}_{chromosome,[^.]+}.g.vcf.gz"
-    threads: 8
+    threads: 16
     run:
         variants=_gatk_multi_arg("--variant", input.variants)
         shell(
-            "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx32g -jar {config[tools][gatk]} -T CombineGVCFs "
+            "java -Xmx32g -jar {config[tools][gatk]} -T CombineGVCFs "
             "{variants} "
             "-L {wildcards.chromosome} -R {input.reference} -o {output} "
             "--disable_auto_index_creation_and_locking_when_reading_rods")
@@ -99,14 +100,14 @@ rule gatk_genotyping_by_chr:
         reference=_get_ref,
         combinedVariants=_get_combined_files
     output:
-        "variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed,[^_]+}.{chromosome,[^.]+}.vcf.gz"
+        "variant_calling/{ref}/{alg}/gatk_hc_family/{family}.{processed,[^_]+}.{chromosome,[^.]+}.vcf.gz"
     threads: 16
-    log: "log/variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed}.{chromosome,[^.]+}.genotype.log"
+    log: "log/variant_calling/{ref}/{alg}/gatk_hc/{family}.{processed}.{chromosome,[^.]+}.genotype.log"
     priority : 2
     run:
         combinedVariants = _gatk_multi_arg("--variant", input.combinedVariants)
         shell(
-            "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx50g -jar {config[tools][gatk]} -T GenotypeGVCFs "
+            "java -Xmx50g -jar {config[tools][gatk]} -T GenotypeGVCFs "
             "-nt 16 --filter_bases_not_stored -R {input.reference} "
             "--disable_auto_index_creation_and_locking_when_reading_rods "
             "--dbsnp {config[known_variants][dbsnp]} "
@@ -122,23 +123,23 @@ rule gatk_genotyping:
         "variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed,[^_]+}.vcf"
     params:
         custom=config.get("params_gatk", "")
-    #log:
-    #    "log/variant_calling/{ref}/{alg}/gatk_hc/gatk.genotype.log"
+    log:
+        "log/variant_calling/{ref}/{alg}/gatk_hc/gatk.genotype.log"
     threads: 16
     run:
         gvcfs = _gatk_multi_arg("--variant", input.gvcfs)
         shell(
-            "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g -jar "
+            "java -Xmx16g -jar "
             "{config[tools][gatk]} "
             "-T GenotypeGVCFs {gvcfs} -nt {threads} {params.custom} "
             "-R {input.reference} --disable_auto_index_creation_and_locking_when_reading_rods "
-            "--dbsnp {config[known_variants][dbsnp]} -o {output}")
+            "--dbsnp {config[known_variants][dbsnp]} -o {output} >& {log}")
 
 rule gatk_merge_vcfs:
     input:
         vcfs=_get_gatk_result_vcfs
     output:
-        "variant_calling/{ref}/{alg}/gatk_hc/gatk-hc.{processed,[^_]+}_merged.vcf.gz"
+        "variant_calling/{ref}/{alg}/gatk_hc_family/{family}.{processed,[^_]+}_merged.vcf.gz"
     shell:
         "/cluster/ngs/delly/src/bcftools/bcftools concat -o {output} -O z -a {input}"
 

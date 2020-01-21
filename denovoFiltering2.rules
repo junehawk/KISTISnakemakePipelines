@@ -1,0 +1,134 @@
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+rule splitSnpIndel:
+    input:
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz.tbi"
+    output:
+        "variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.{type,(snp|indel)}.vcf.gz"
+    threads: 4
+    shell:
+        "{config[tools][bcftools]} view --threads {threads} "
+        "-i 'TYPE=\"{wildcards.type}\"' "
+        "-o {output} -O z {input.vcf}"
+
+rule applyInHouseFilter:
+    input:
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.{type}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.{type}.vcf.gz.tbi"
+    output:
+        "variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.{type,(snp|indel)}.JL.vcf.gz"
+    shell:
+        "source /cluster/ngs/utils/miniconda/bin/activate root && "
+        "python /blues/scratch/juneh/filterTest/JL/filter_{wildcards.type}_JL.py {input.vcf} | "
+        "{config[tools][bgzip]} -@ {threads} -c > {output}"
+
+rule makeAcData:
+    input:
+        vcf="variant_calling/gatk_b38/mem/gatk_hc/gatk-hc.fmarked_merged.recalibrated_final.reheadered.norm.lcr.vcf.gz",
+        tbi="variant_calling/gatk_b38/mem/gatk_hc/gatk-hc.fmarked_merged.recalibrated_final.reheadered.norm.lcr.vcf.gz.tbi"
+    output:
+        "variant_calling/gatk_b38/mem/gatk_hc/gatk_hc.acfiltered.vcf.gz"
+    threads: 8
+    shell:
+        "{config[tools][bcftools]} view -G -i 'AC<3 & AC>0' -O z -o {output} --threads {threads} {input.vcf}"
+
+rule acFilter:
+    input:
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz.tbi",
+        acvcf="variant_calling/gatk_b38/mem/gatk_hc/gatk_hc.acfiltered.vcf.gz",
+        acvcftbi="variant_calling/gatk_b38/mem/gatk_hc/gatk_hc.acfiltered.vcf.gz.tbi"
+    output:
+        vcf="variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.ac.vcf.gz"
+    threads: 4
+    shell:
+        "{config[tools][bcftools]} isec --threads {threads} "
+        "{input.vcf} {input.acvcf} -n \"=2\" -w 1 "
+        "-o {output.vcf} -O z"
+
+rule acFilter1:
+    input:
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz.tbi",
+        acvcf="variant_calling/gatk_b38/mem/gatk_hc/gatk_hc.acfiltered.ac1.vcf.gz",
+        acvcftbi="variant_calling/gatk_b38/mem/gatk_hc/gatk_hc.acfiltered.ac1.vcf.gz.tbi"
+    output:
+        vcf="variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.ac1.vcf.gz"
+    threads: 4
+    shell:
+        "{config[tools][bcftools]} isec --threads {threads} "
+        "{input.vcf} {input.acvcf} -n \"=2\" -w 1 "
+        "-o {output.vcf} -O z"
+
+rule annotateHRun:
+    input:
+        reference=_get_ref,
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz.tbi",
+    output:
+        vcf=temp("variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.HRun.vcf.gz"),
+        tbi=temp("variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.HRun.vcf.gz.tbi")
+    threads: 8
+    shell:
+        "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16G -jar {config[tools][gatk]} -T VariantAnnotator "
+        "-R {input.reference} -V {input.vcf} -o {output.vcf} -A HomopolymerRun -nt {threads}"
+
+rule filterHRun:
+    input:
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.HRun.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.HRun.vcf.gz.tbi"
+    output:
+        "variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.HRunF.vcf.gz"
+    threads: 4
+    shell:
+        "{config[tools][bcftools]} filter -i 'HRun < 7' "
+        "-o {output} -O z --threads {threads} {input.vcf}"
+
+
+rule vepAnnotation:
+    input:
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz.tbi"
+    output:
+        "variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.vep.vcf.gz"
+    threads: 4
+    shell:
+        "source /cluster/ngs/utils/perlbrew/etc/bashrc && "
+        "perlbrew use perl-5.24.0 && "
+        "export PERL5LIB="" && "
+        "/cluster/ngs/ensembl-vep-release-88.8/vep --cache --dir_cache /cluster/ngs/ensembl-vep-release-88.8/cache "
+        "--fork {threads} -i {input.vcf} --everything --offline -o stdout --vcf --assembly GRCh38 --no_stats --force_overwrite | "
+        "{config[tools][bgzip]} -@ {threads} -c > {output} && "
+        "/cluster/ngs/snakemake/rules_test/copyPreviousIfNull.sh {output}"
+        
+rule vepFilter:
+    input:
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vep.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vep.vcf.gz.tbi"
+    output:
+        "variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.vep.acFiltered.vcf.gz"
+    shell:
+        "source /cluster/ngs/utils/perlbrew/etc/bashrc && "
+        "perlbrew use perl-5.24.0 && "
+        "export PERL5LIB="" && "
+        "/cluster/ngs/ensembl-vep-release-88.8/filter_vep --format vcf "
+        "--input {input.vcf} --filter \"not EAS_AF > 0.0002\" | "
+        "{config[tools][bgzip]} -c > {output} && "
+        "/cluster/ngs/snakemake/rules_test/copyPreviousIfNull.sh {output}"
+
+
+rule removeSexChr:
+    input:
+        vcf="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{triocaller}/{project}-{disease}-{family}-{case}-{method}-{platform}.{processed}.vcf.gz.tbi"
+    output:
+        vcf="variant_calling/{ref,[^/]+}/{alg,[^/]+}/{caller,[^/]+}/{triocaller,[^/]+}/{project,[^/]+}-{disease}-{family}-{case}-{method}-{platform,[^.]+}.{processed}.woSexChr.vcf.gz"
+    threads: 4
+    shell:
+        "{config[tools][bcftools]} view --threads {threads} "
+        "-t '^chrX,chrY,chrM' "
+        "-o {output.vcf} -O z "
+        "{input.vcf}"

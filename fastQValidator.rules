@@ -7,4 +7,4 @@ rule fastQValidator:
     threads: 4
     priority: 5
     shell:
-        "{config[tools][fastQValidator]} --maxErrors 1 --noeof --file {input} | tee {output}"
+        "{config[tools][fastQValidator]} --maxErrors 1 --noeof --disableSeqIDCheck --file {input} | tee {output}"

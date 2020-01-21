@@ -1,0 +1,41 @@
+def _get_triodenovo_bed(wildcards):
+    if(wildcards.type=="f"):
+        return(expand("variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.triodenovo.trioF.bed", ref=wildcards.ref, alg=wildcards.alg, caller=wildcards.caller, project=wildcards.project, disease=wildcards.diease, family=wildcards.family, sample=wildcards.sample, methods=wildcards.methods, platform=wildcards.platform, process=wildcards.process))
+    else:
+        return(expand("variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.triodenovo.bed", ref=wildcards.ref, alg=wildcards.alg, caller=wildcards.caller, project=wildcards.project, disease=wildcards.diease, family=wildcards.family, sample=wildcards.sample, methods=wildcards.methods, platform=wildcards.platform, process=wildcards.process))
+
+rule triodenovo:
+    input:
+        ped="peds/{family}.ped",
+        vcf="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.vcf.gz",
+        tbi="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.vcf.gz.tbi"
+    output:
+        "variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}.triodenovo.vcf"
+    shell:
+        "{config[tools][triodenovo]} --ped {input.ped} --in_vcf {input.vcf} --out_vcf {output} --minDepth 10 --chrX chrX --minDQ 7"
+
+rule triodenovo_filter:
+    input: vcf="variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.triodenovo.vcf"
+    output: "variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}.triodenovo.trioF.vcf"
+    shell:
+        "egrep \"DQ|#\" {input} | perl -lane 'print if /#/; next if length($F[3])>1 || length($F[4])>1 || $F[4]=~/,/; next if $F[5]<30; $F[9] =~ /([A-Z])\/([A-Z])/; next if $1 ne $2; next if $F[10] !~ /$1\/$1/; $F[11]=~/([A-Z])\/([A-Z])/; next if $1 eq $2; $F[11] =~ /(\d+),(\d+),(\d+)/; next if $2 != 0 || $1<30 || $3<30; print' > {output}"
+
+
+rule getTriodenovoPosition:
+    input:
+        "variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.vcf"
+    output:
+        "variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}.bed"
+    shell:
+        "source /cluster/ngs/utils/miniconda/bin/activate root && "
+        "python /cluster/ngs/freebayes/vcflib/scripts/vcf2bed.py < {input} > {output}"
+
+rule getTriodenovoVcf:
+    input:
+        vcfa = "variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.vcf.gz",
+        bedb = "variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process}.triodenovo.bed"
+    output:
+        "variant_calling/{ref}/{alg}/{caller}/{project}-{disease}-{family}-{sample}-{methods}-{platform}.{process,[^/_]+}.triodenovo_{type,(f|nf)}.vcf.gz"
+    shell:
+        "{config[tools][bedtools]} intersect -a {input.vcfa} -b {input.bedb} -wa -header | "
+        "{config[tools][bgzip]} > {output}"

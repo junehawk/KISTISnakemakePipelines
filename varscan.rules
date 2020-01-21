@@ -89,3 +89,19 @@ rule varscan_merge:
         "log/variant_calling/{ref}/{alg}/varscan_all.{processed}.log"
     shell:
         "{config[tools][vcftools]}/vcf-concat {input} > {output} 2> {log}"
+
+rule samtools_mpileup_Q20q20:
+    input: "{prefix}.bam"
+    output: "{prefix}.Q20q20.mpileup"
+    threads: 4
+    shell:
+        "{config[tools][samtools]} mpileup -B -Q 20 -q 20 -f {input.reference} {input.bam} > {output}"
+
+rule varscan_somatic_from_pileup:
+    input: 
+        normal="mapping/{ref}/{alg}/{project}-{disease}-{id}-{normal}-{method}-{platform}.{processed}.Q20q20.mpileup",
+        tumor="mapping{ref}/{alg}/{project}-{disease}-{id}-{tumor}-{method}-{platform}.{processed}.Q20q20.mpileup"
+    output: "variant_calling/{ref}/{alg}/varscan/{project}-{disease}-{id}-{tumor}-{method}-{platform}.{processed}_{normal}.vcf"
+    threads: 4
+    shell:
+        "java -Xms8g -Xmx12g  -jar {config[tools][varscan]} somatic {input.normal} {input.tumor} {output} --min-var-freq 0.01 --output-vcf 1"

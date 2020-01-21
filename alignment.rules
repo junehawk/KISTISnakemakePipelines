@@ -78,7 +78,7 @@ rule fast_bwa_mem_dedup:
         r"LB:{params.id}\tSM:{params.id}\tPL:{config[platform]}' "
         "-t {threads} {input.reference} {input.fastqs} | "
         "{config[tools][samblaster]} --addMateTags -M | "
-        "{config[tools][samtools]} sort -@ {threads} -o {output.bam} -T mapping/{wildcards.ref}/mem/{params.id}"
+        "{config[tools][samtools]} sort -m 2G -@ {threads} -o {output.bam} -T mapping/{wildcards.ref}/mem/{params.id}"
         #"{config[tools][sambamba]} view -S -t {threads} --format=bam /dev/stdin | "
         #"{config[tools][sambamba]} sort -t {threads} --tmpdir={config[tmp_path]} -o {output.bam} /dev/stdin 2> {log}"
 

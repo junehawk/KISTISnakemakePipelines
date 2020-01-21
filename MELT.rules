@@ -1,0 +1,139 @@
+#MELT Pipeline
+#Run MELT analysis pipeline in a family-wise way
+#ONLY WORK WITH HG38 FOR NOW
+
+#get path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+
+#MELT jar from config
+MELT=config['tools']['MELT']
+
+#JAVA 1.8 location
+JAVA8=config['tools']['JAVA8']#'/cluster/ngs/jdk1.8.0_60/bin/java'
+
+#getting Transposon Reference Files
+def _get_zip(wildcards):
+    return "/cluster/ngs/MELTv2.1.5/me_refs/Hg38/" + wildcards.type + "_MELT.zip"
+
+#getting gene annotation bed file
+def _get_gene_annots(wildcards):
+    return "/cluster/ngs/MELTv2.1.5/add_bed_files/Hg38/Hg38.genes.bed"
+
+#Getting all IndivAnalysis result file names for a specific family
+def _get_all_hum_breaks(wildcards):
+    IDS, = glob_wildcards("mapping/" + wildcards.ref + "/" + wildcards.alg + "/" + wildcards.project + "-" + wildcards.disease + "-" + wildcards.family + "{id}-" + wildcards.sample + "-" + wildcards.method + "-" + wildcards.platform + "." + wildcards.process + ".bam")
+    return expand("sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{type}/{project}-{disease}-{family}{ID}-{sample}-{method}-{platform}.{process}.{type}.hum_breaks.sorted.bam", 
+        ID=IDS,
+        ref=wildcards.ref,
+        alg=wildcards.alg,
+        family=wildcards.family,
+        type=wildcards.type,
+        project=wildcards.project,
+        disease=wildcards.disease,
+        sample=wildcards.sample,
+        method=wildcards.method,
+        platform=wildcards.platform,
+        process=wildcards.process)
+
+#Getting all Genotype result file names for a specific family
+def _get_all_tsvs(wildcards):
+    IDS, = glob_wildcards("mapping/" + wildcards.ref + "/" + wildcards.alg + "/" + wildcards.project + "-" + wildcards.disease + "-" + wildcards.family + "{id}-" + wildcards.sample + "-" + wildcards.method + "-" + wildcards.platform + "." + wildcards.process + ".bam")
+    return expand("sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{type}/{project}-{disease}-{family}{ID}-{sample}-{method}-{platform}.{process}.{type}.tsv",
+        ID=IDS,
+        ref=wildcards.ref,
+        alg=wildcards.alg,
+        family=wildcards.family,
+        type=wildcards.type,
+        project=wildcards.project,
+        disease=wildcards.disease,
+        sample=wildcards.sample,
+        method=wildcards.method,
+        platform=wildcards.platform,
+        process=wildcards.process)
+
+#Create directory for the analysis and generate softlinks for the bam files and indexes
+#Because the output is softlinks, touching the output is required
+rule melt_prepare_bam:
+    input: 
+        bam="mapping/{ref}/{alg}/{prefix}.bam",
+        bai="mapping/{ref}/{alg}/{prefix}.bam.bai"
+    output: 
+        bam="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{prefix}.bam",
+        bai="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{prefix}.bam.bai"
+    shell: "ln -s `pwd`/{input.bam} {output.bam} && ln -s `pwd`/{input.bai} {output.bai} && touch {output.bam} && touch {output.bai}"
+
+#Preprocessing on the bam file of one sample for the folow-up MELT analysis
+rule melt_preprocess:
+    input:
+        bam="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{prefix}.bam",
+        bai="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{prefix}.bam.bai",
+        reference=_get_ref
+    output:
+        bam="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{prefix}.bam.disc",
+        bai="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{prefix}.bam.disc.bai",
+        fq="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{prefix}.bam.fq"
+    threads: 4
+    shell:
+        "{JAVA8} -Xmx6G -jar {MELT} Preprocess -bamfile {input.bam} -h {input.reference}"
+
+#Discovering discordant reads aligned to transposon reference
+#This step requires bowtie2; it is assumed that bowtie2 is in PATH
+rule melt_discover:
+    input: 
+        disc="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{prefix}.bam.disc",
+        bam="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{prefix}.bam",
+        reference=_get_ref,
+        zip_file=_get_zip
+    output:
+        "sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{type,[^.]+}/{prefix}.{type}.hum_breaks.sorted.bam"
+    threads: 8
+    params:
+        work_path="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{type}"
+    shell:
+        "export PERL5LIB=/home/juneh/perl5/lib/perl5 && "
+        "{JAVA8} -Xmx12G -jar {MELT} IndivAnalysis -h {input.reference} -bamfile {input.bam} "
+        "-w {params.work_path} -t {input.zip_file} -c 30"
+
+#Group analysis step of MELT
+rule melt_GroupAnalysis:
+    input:
+        bams=_get_all_hum_breaks,
+        reference=_get_ref,
+        zip_file=_get_zip,
+        gene_annots=_get_gene_annots
+    output: "sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{type}/{type}.pre_geno.tsv"
+    threads: 4
+    params: work_path="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{type}"
+    shell:
+        "{JAVA8} -Xmx6G -jar {MELT} GroupAnalysis -discoverydir {params.work_path} -w {params.work_path} "
+        "-t {input.zip_file} -h {input.reference} -n {input.gene_annots}"
+
+#Genotype step of MELT
+rule melt_genotype:
+    input:
+        bam="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{prefix}.bam",
+        bai="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{prefix}.bam.bai",
+        reference=_get_ref,
+        pre_geno="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{type}/{type}.pre_geno.tsv",
+        zip_file=_get_zip
+    output: "sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{type}/{prefix}.{type}.tsv"
+    threads: 4
+    params: work_path="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{type}"
+    shell:
+        "{JAVA8} -Xmx6G -jar {MELT} Genotype -bamfile {input.bam} -t {input.zip_file} "
+        "-h {input.reference} -w {params.work_path} -p {params.work_path}"
+
+#Gather genotype result from each sample in the family and generate vcf; FINAL step
+rule melt_generate_vcf:
+    input:
+        tsvs=_get_all_tsvs,
+        reference=_get_ref,
+        zip_file=_get_zip
+    output: "sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform,[^.]+}.{process}/{type}/{type}.final_comp.vcf"
+    threads: 4
+    params:
+        work_path="sv_calling/{ref}/{alg}/MELT/{project}-{disease}-{family}-{sample}-{method}-{platform}.{process}/{type}"
+    shell:
+        "{JAVA8} -Xmx6G -jar {MELT} MakeVCF -genotypingdir {params.work_path} -h {input.reference} "
+        "-t {input.zip_file} -w {params.work_path} -p {params.work_path} -o {params.work_path}"

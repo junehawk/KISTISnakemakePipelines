@@ -9,15 +9,15 @@ def _get_popfile(wildcards):
 rule ContEst:
     input:
         reference=_get_ref,
-        case="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{case}-{method}-{platform}.{processed}.bam",
-        normal="mapping/{ref}/{alg}/{project}-{disease}-{participant,\d+}-{control}-{method}-{platform}.{processed}.bam",
+        case="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{case}-{method}-{platform}.{processed}.bam",
+        normal="mapping/{ref}/{alg}/{project}-{disease}-{participant}-{control}-{method}-{platform}.{processed}.bam",
         popfile=_get_popfile
     output:
-        "qc/{ref}/{alg}/ContEst/{project}-{disease}-{participant,\d+}-{case}_{control}-{method}-{platform}.{processed}.contest.txt"
+        "qc/{ref}/{alg}/ContEst/{project}-{disease}-{participant}-{case}_{control}-{method}-{platform}.{processed}.contest.txt"
     threads: 4
     priority: 4
     shell:
-        "java -Xmx16g -jar {config[tools][gatk]} -T ContEst "
+        "java -XX:+UseConcMarkSweepGC -XX:ParallelGCThreads=4 -Xmx16g -jar {config[tools][gatk]} -T ContEst "
         "-R {input.reference} "
         "-I:eval {input.case} "
         "-I:genotype {input.normal} "

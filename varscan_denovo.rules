@@ -1,0 +1,28 @@
+#oget path to reference genome file with name of 'ref'
+def _get_ref(wildcards):
+    return config["references"][wildcards.ref]
+    
+rule varscan_denovo_run:
+    input:
+        dad = "mapping/{ref}/{alg}/{project}-{disease}-{family}1-{sample}-{method}-{platform}.{postproc}.bam",
+        mom = "mapping/{ref}/{alg}/{project}-{disease}-{family}2-{sample}-{method}-{platform}.{postproc}.bam",
+        child = "mapping/{ref}/{alg}/{project}-{disease}-{family}3-{sample}-{method}-{platform}.{postproc}.bam",
+        reference = _get_ref
+    output:
+        temp("denovo_calling/{ref}/{alg}/varscan/{project}-{disease}-{family}-{sample}-{method}-{platform}.{postproc}.mpileup.txt")
+    threads: 4
+    shell:
+        "{config[tools][samtools]} mpileup -B -q 1 -f {input.reference} {input.dad} {input.mom} {input.child} > {output}"
+
+
+rule varscan_denovo_pileup:
+    input:
+        pileup = "denovo_calling/{ref}/{alg}/varscan/{project}-{disease}-{family}-{sample}-{method}-{platform}.{postproc}.mpileup.txt"
+    output:
+        snp = "denovo_calling/{ref}/{alg}/varscan/{project}-{disease}-{family}-{sample}-{method}-{platform}.{postproc}.snp.vcf",
+        indel = "denovo_calling/{ref}/{alg}/varscan/{project}-{disease}-{family}-{sample}-{method}-{platform}.{postproc}.indel.vcf"
+    params:
+        prefix = "denovo_calling/{ref}/{alg}/varscan/{family}"
+    threads: 4
+    shell:
+        "java -jar {config[tools][varscan]} trio {input.pileup} {params.prefix} --min-coverage 10 --min-var-freq 0.20 --p-value 0.05 -adj-var-freq 0.05 -adj-p-value 0.15"
